@@ -152,3 +152,43 @@ class AssemblyPullData(models.Model):
 
     def __str__(self):
         return f"#{self.sequence} - {self.vehicle_model} {self.color}"
+
+
+class SystemParameter(models.Model):
+    """系统参数"""
+    PARAMETER_CHOICES = [
+        ('CYCLE_TIME_MIN', '涂装一圈时间(分钟)'),
+        ('AVG_HANGING_COUNT', '每车平均挂数'),
+        ('TOTAL_VEHICLES', '涂装线一圈车数'),
+        ('SHORT_TERM_CAPACITY', '短期产能百分比(%)'),
+        ('LONG_TERM_CAPACITY', '长期产能百分比(%)'),
+        ('FRONT_REAR_BALANCE_D', '前后平衡约束差值'),
+        ('GROUP_CAPACITY_LIMIT', '组车数平衡约束(%)'),
+        ('LONG_TERM_FORECAST_HOURS', '长期需求预测时间(小时)'),
+    ]
+
+    param_key = models.CharField(max_length=50, choices=PARAMETER_CHOICES, unique=True, verbose_name="参数键")
+    param_value = models.CharField(max_length=200, verbose_name="参数值")
+    description = models.TextField(blank=True, verbose_name="描述")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "系统参数"
+        verbose_name_plural = "系统参数"
+
+    def __str__(self):
+        return f"{self.get_param_key_display()}: {self.param_value}"
+
+    def get_float_value(self):
+        """获取浮点数值"""
+        try:
+            return float(self.param_value)
+        except (ValueError, TypeError):
+            return 0.0
+
+    def get_int_value(self):
+        """获取整数值"""
+        try:
+            return int(float(self.param_value))
+        except (ValueError, TypeError):
+            return 0
