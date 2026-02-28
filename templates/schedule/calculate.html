@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block title %}排产计算 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="mb-4">排产计算</h2>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">计算参数</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="short_term_duration" class="form-label">短期时长（分钟）</label>
+                                    <input type="number" class="form-control" id="short_term_duration" name="short_term_duration"
+                                           value="{{ short_term_duration }}" min="1" required>
+                                    <div class="form-text">短期计划的时间范围</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="long_term_duration" class="form-label">长期时长（分钟）</label>
+                                    <input type="number" class="form-control" id="long_term_duration" name="long_term_duration"
+                                           value="{{ long_term_duration }}" min="1" required>
+                                    <div class="form-text">长期计划的时间范围</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <h6><i class="bi bi-info-circle"></i> 系统参数</h6>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>总车数:</strong> {{ total_vehicles }}</p>
+                                    <p><strong>短期产能:</strong> {{ short_term_capacity }}%</p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>长期产能:</strong> {{ long_term_capacity }}%</p>
+                                </div>
+                            </div>
+                            <small class="text-muted">其他参数将在计算时从系统配置中读取</small>
+                        </div>
+
+                        <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                            <a href="{% url 'schedule:history' %}" class="btn btn-secondary">查看历史</a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-calculator"></i> 开始计算
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 计算说明 -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">计算说明</h5>
+                </div>
+                <div class="card-body">
+                    <h6>计算流程</h6>
+                    <ol>
+                        <li>读取基础数据（库存、安全库存、总成拉动数据、系统参数）</li>
+                        <li>生成提前期需求表（短期和长期）</li>
+                        <li>计算风险表（短期风险表和长期风险表）</li>
+                        <li>生成排产计划表（短期计划表和长期计划表）</li>
+                        <li>阵型结构约束优化</li>
+                        <li>更新库存（延迟更新）</li>
+                    </ol>
+
+                    <h6 class="mt-3">关键公式</h6>
+                    <ul>
+                        <li><strong>短期需求数量:</strong> 涂装线一圈车数 × 每车平均挂数 × 短期产能百分比 / 2</li>
+                        <li><strong>长期需求数量:</strong> 涂装线一圈车数 × 每车平均挂数 × 长期产能百分比 / 2</li>
+                        <li><strong>生产数量:</strong> 需求数量 / 合格率（向上取整）</li>
+                        <li><strong>短期终值:</strong> 当前库存 - 短期需求生产数量</li>
+                        <li><strong>长期风险值:</strong> 安全库存 - 长期终值</li>
+                    </ul>
+
+                    <h6 class="mt-3">注意事项</h6>
+                    <ul>
+                        <li>计算前请确保已导入必要的库存和总成拉动数据</li>
+                        <li>计算过程会自动保存所有结果到数据库</li>
+                        <li>可以在历史记录中查看所有计算结果</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
