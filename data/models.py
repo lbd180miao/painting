@@ -76,3 +76,52 @@ class Product(models.Model):
 
     def __str__(self):
         return f"{self.vehicle_model} {self.color} {self.get_position_type_display()}"
+
+
+class Inventory(models.Model):
+    """涂装库存"""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, verbose_name="产品", related_name='inventory')
+    current_quantity = models.IntegerField(default=0, verbose_name="当前库存")
+    updated_quantity = models.IntegerField(null=True, blank=True, verbose_name="更新后库存")
+    update_time = models.DateTimeField(null=True, blank=True, verbose_name="更新时间")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "涂装库存"
+        verbose_name_plural = "涂装库存"
+
+    def __str__(self):
+        return f"{self.product}: {self.current_quantity}"
+
+
+class InjectionInventory(models.Model):
+    """注塑库存"""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, verbose_name="产品", related_name='injection_inventory')
+    current_quantity = models.IntegerField(default=0, verbose_name="当前库存")
+    updated_quantity = models.IntegerField(null=True, blank=True, verbose_name="更新后库存")
+    update_time = models.DateTimeField(null=True, blank=True, verbose_name="更新时间")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "注塑库存"
+        verbose_name_plural = "注塑库存"
+
+    def __str__(self):
+        return f"{self.product}: {self.current_quantity}"
+
+
+class SafetyStock(models.Model):
+    """安全库存"""
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, verbose_name="产品", related_name='safety_stock')
+    quantity = models.IntegerField(default=0, verbose_name="安全库存数量")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
+
+    class Meta:
+        verbose_name = "安全库存"
+        verbose_name_plural = "安全库存"
+
+    def __str__(self):
+        return f"{self.product}: {self.quantity}"
