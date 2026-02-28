@@ -1,6 +1,10 @@
-$(document).ready(function() {
-    // 自动隐藏提示消息
+document.addEventListener('DOMContentLoaded', function() {
     setTimeout(function() {
-        $('.alert').fadeOut('slow');
+        const alerts = document.querySelectorAll('.alert');
+        alerts.forEach(alert => {
+            alert.style.transition = 'opacity 0.5s';
+            alert.style.opacity = '0';
+            setTimeout(() => alert.remove(), 500);
+        });
     }, 5000);
 });
