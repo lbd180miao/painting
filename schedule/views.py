@@ -170,3 +170,12 @@ def history_list_view(request):
     }
 
     return render(request, 'schedule/history.html', context)
+
+
+def export_to_excel_view(request, id):
+    """
+    Export schedule calculation results to Excel file
+    """
+    from .utils import export_schedule_to_excel
+
+    return export_schedule_to_excel(id)

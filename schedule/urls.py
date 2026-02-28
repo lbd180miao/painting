@@ -10,4 +10,5 @@ urlpatterns = [
     path('calculate/', views.calculate_view, name='calculate'),
     path('result/<int:id>/', views.result_view, name='result'),
     path('history/', views.history_list_view, name='history'),
+    path('export/<int:id>/', views.export_to_excel_view, name='export'),
 ]

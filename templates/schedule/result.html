@@ -12,6 +12,7 @@
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h2>计算结果 #{{ record.id }}</h2>
                 <div>
+                    <a href="{% url 'schedule:export' record.id %}" class="btn btn-success">导出Excel</a>
                     <a href="{% url 'schedule:calculate' %}" class="btn btn-secondary">返回计算</a>
                     <a href="{% url 'schedule:history' %}" class="btn btn-secondary">历史记录</a>
                 </div>
