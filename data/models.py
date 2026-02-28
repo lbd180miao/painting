@@ -128,3 +128,27 @@ class SafetyStock(models.Model):
 
     def __str__(self):
         return f"{self.product}: {self.quantity}"
+
+
+class AssemblyPullData(models.Model):
+    """总成拉动数据"""
+    sequence = models.PositiveIntegerField(verbose_name="顺序号")
+    vehicle_model = models.ForeignKey(VehicleModel, on_delete=models.CASCADE, verbose_name="车型", related_name='assembly_data')
+    color = models.ForeignKey(Color, on_delete=models.CASCADE, verbose_name="颜色", related_name='assembly_data')
+    planned_time = models.DateTimeField(verbose_name="计划时间")
+
+    # 导入批次标识
+    import_batch = models.CharField(max_length=100, blank=True, verbose_name="导入批次")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "总成拉动数据"
+        verbose_name_plural = "总成拉动数据"
+        ordering = ['sequence']
+        indexes = [
+            models.Index(fields=['sequence']),
+            models.Index(fields=['import_batch']),
+        ]
+
+    def __str__(self):
+        return f"#{self.sequence} - {self.vehicle_model} {self.color}"
