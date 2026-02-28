@@ -2,10 +2,9 @@
 涂装双层滚动排产算法核心模块
 """
 import math
-from typing import Dict, List, Tuple
-from django.utils import timezone
+from typing import Dict, List
 from data.models import (
-    Product, Inventory, InjectionInventory, SafetyStock,
+    Product, Inventory, SafetyStock,
     AssemblyPullData, SystemParameter
 )
 from schedule.models import (
@@ -18,6 +17,11 @@ class SchedulingAlgorithm:
     """
     涂装双层滚动排产算法
     """
+
+    # Position type constants
+    POSITION_FRONT = 'front'
+    POSITION_REAR = 'rear'
+    POSITION_TYPES = [POSITION_FRONT, POSITION_REAR]
 
     def __init__(self):
         self.params = self._load_parameters()
@@ -124,7 +128,7 @@ class SchedulingAlgorithm:
         demand_summary = {}
         for assembly in assembly_list:
             # 前后各需一台
-            for position in ['front', 'rear']:
+            for position in self.POSITION_TYPES:
                 key = f"{assembly.vehicle_model.name}_{assembly.color.name}_{position}"
                 if key not in demand_summary:
                     demand_summary[key] = {
@@ -167,7 +171,7 @@ class SchedulingAlgorithm:
 
         demand_summary = {}
         for assembly in assembly_list:
-            for position in ['front', 'rear']:
+            for position in self.POSITION_TYPES:
                 key = f"{assembly.vehicle_model.name}_{assembly.color.name}_{position}"
                 if key not in demand_summary:
                     demand_summary[key] = {
@@ -268,21 +272,21 @@ class SchedulingAlgorithm:
             group_key = f"{product.vehicle_model.name}_{product.color.name}"
             if group_key not in vehicle_color_groups:
                 vehicle_color_groups[group_key] = {
-                    'front': None,
-                    'rear': None
+                    self.POSITION_FRONT: None,
+                    self.POSITION_REAR: None
                 }
             vehicle_color_groups[group_key][product.position_type.name] = risk
 
         # 计算每组风险
         for group_key, group_data in vehicle_color_groups.items():
-            front_risk = group_data.get('front', {}).get('risk_value', 0) if group_data.get('front') else 0
-            rear_risk = group_data.get('rear', {}).get('risk_value', 0) if group_data.get('rear') else 0
+            front_risk = group_data.get(self.POSITION_FRONT, {}).get('risk_value', 0) if group_data.get(self.POSITION_FRONT) else 0
+            rear_risk = group_data.get(self.POSITION_REAR, {}).get('risk_value', 0) if group_data.get(self.POSITION_REAR) else 0
             group_risk_value = max(front_risk, rear_risk)
 
-            if group_data.get('front'):
-                group_data['front']['group_risk_value'] = group_risk_value
-            if group_data.get('rear'):
-                group_data['rear']['group_risk_value'] = group_risk_value
+            if group_data.get(self.POSITION_FRONT):
+                group_data[self.POSITION_FRONT]['group_risk_value'] = group_risk_value
+            if group_data.get(self.POSITION_REAR):
+                group_data[self.POSITION_REAR]['group_risk_value'] = group_risk_value
 
         # 按组风险值排序
         risks.sort(key=lambda x: x.get('group_risk_value', 0), reverse=True)
@@ -353,14 +357,14 @@ class SchedulingAlgorithm:
                 suggested_vehicles = max(1, math.ceil(abs(risk['final_value']) / hanging_count))
 
                 # 检查前后平衡
-                if position == 'front':
+                if position == self.POSITION_FRONT:
                     if abs((front_count + suggested_vehicles) - rear_count) <= self.params['FRONT_REAR_BALANCE_D']:
                         plans.append({
                             'product': product,
                             'vehicle_count': suggested_vehicles
                         })
                         front_count += suggested_vehicles
-                else:  # rear
+                else:  # POSITION_REAR
                     if abs(front_count - (rear_count + suggested_vehicles)) <= self.params['FRONT_REAR_BALANCE_D']:
                         plans.append({
                             'product': product,
