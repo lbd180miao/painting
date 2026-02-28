@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% block title %}首页 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>欢迎使用涂装生产排程管理系统</h1>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>数据管理</h5>
+            </div>
+            <div class="card-body">
+                <p>导入和管理生产数据</p>
+                <a href="{% url 'data:import' %}" class="btn btn-primary">数据导入</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>排产计算</h5>
+            </div>
+            <div class="card-body">
+                <p>执行排产算法计算</p>
+                <a href="{% url 'schedule:calculate' %}" class="btn btn-success">执行计算</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5>历史记录</h5>
+            </div>
+            <div class="card-body">
+                <p>查看历史排产记录</p>
+                <a href="{% url 'schedule:history' %}" class="btn btn-info">查看历史</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

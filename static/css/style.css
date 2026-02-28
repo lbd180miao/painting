@@ -1,0 +1,19 @@
+body {
+    font-family: 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.card {
+    margin-bottom: 20px;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+.alert-fixed {
+    position: fixed;
+    top: 70px;
+    right: 20px;
+    z-index: 9999;
+    min-width: 300px;
+}
