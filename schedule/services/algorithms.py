@@ -3,6 +3,7 @@
 """
 import math
 from typing import Dict, List
+from django.contrib.auth.models import User
 from data.models import (
     Product, Inventory, SafetyStock,
     AssemblyPullData, SystemParameter
@@ -481,3 +482,73 @@ class SchedulingAlgorithm:
                 product=slot['product'],
                 plan_type=slot['plan_type']
             )
+
+        # 发送风险通知
+        self.send_risk_notifications(results, record)
+
+    def send_risk_notifications(self, results: Dict, record: ScheduleRecord):
+        """
+        发送风险通知消息
+        当检测到风险时（终值 < 0 或 risk_value > 0），为用户创建通知消息
+        """
+        from notifications.models import Notification
+
+        # 获取所有需要通知的用户（可以根据实际需求调整）
+        users = User.objects.filter(is_active=True)
+
+        # 检查短期风险（终值 < 0）
+        short_term_risks = [r for r in results.get('short_risk', []) if r['final_value'] < 0]
+
+        # 检查长期风险（risk_value > 0）
+        long_term_risks = [r for r in results.get('long_risk', []) if r.get('risk_value', 0) > 0]
+
+        # 如果有风险，发送通知
+        if short_term_risks or long_term_risks:
+            for user in users:
+                # 短期风险通知
+                if short_term_risks:
+                    short_risk_items = []
+                    for risk in short_term_risks[:5]:  # 最多显示5项
+                        product = risk['product']
+                        short_risk_items.append(
+                            f"- {product.vehicle_model.name} {product.color.name} {product.position_type.name}: "
+                            f"终值 {risk['final_value']}"
+                        )
+
+                    short_title = f"短期库存风险预警 - 排产记录 #{record.id}"
+                    short_content = (
+                        f"检测到短期库存风险，以下产品库存不足：\n\n"
+                        f"{chr(10).join(short_risk_items)}\n\n"
+                        f"请及时关注并安排生产。"
+                    )
+
+                    Notification.objects.create(
+                        user=user,
+                        title=short_title,
+                        content=short_content,
+                        related_record=record
+                    )
+
+                # 长期风险通知
+                if long_term_risks:
+                    long_risk_items = []
+                    for risk in long_term_risks[:5]:  # 最多显示5项
+                        product = risk['product']
+                        long_risk_items.append(
+                            f"- {product.vehicle_model.name} {product.color.name} {product.position_type.name}: "
+                            f"风险值 {risk.get('risk_value', 0)}"
+                        )
+
+                    long_title = f"长期库存风险预警 - 排产记录 #{record.id}"
+                    long_content = (
+                        f"检测到长期库存风险，以下产品存在库存隐患：\n\n"
+                        f"{chr(10).join(long_risk_items)}\n\n"
+                        f"请提前规划生产计划。"
+                    )
+
+                    Notification.objects.create(
+                        user=user,
+                        title=long_title,
+                        content=long_content,
+                        related_record=record
+                    )

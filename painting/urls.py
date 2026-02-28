@@ -26,6 +26,7 @@ urlpatterns = [
     path("", TemplateView.as_view(template_name="home.html"), name="home"),
     path("data/", include("data.urls")),
     path("schedule/", include("schedule.urls")),
+    path("notifications/", include("notifications.urls")),
 ]
 
 if settings.DEBUG:

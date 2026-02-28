@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     "django_bootstrap5",  # 添加bootstrap5
     "data",  # 添加data app
     "schedule",  # 添加schedule app
+    "notifications",  # 添加notifications app (renamed from messages to avoid conflict)
 ]
 
 MIDDLEWARE = [
@@ -68,6 +69,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "painting.context_processors.unread_count",
             ],
         },
     },

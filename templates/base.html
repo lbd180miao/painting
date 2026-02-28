@@ -51,7 +51,7 @@
                 </ul>
                 <ul class="navbar-nav">
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'messages:inbox' %}">
+                        <a class="nav-link" href="{% url 'notifications:inbox' %}">
                             消息
                             {% if unread_count %}<span class="badge bg-danger">{{ unread_count }}</span>{% endif %}
                         </a>
