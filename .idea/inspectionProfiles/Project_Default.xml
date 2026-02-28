@@ -1,0 +1,31 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="setuptools" />
+          <option value="Django" />
+          <option value="channels" />
+          <option value="channels-redis" />
+          <option value="celery" />
+          <option value="redis" />
+          <option value="opencv-python" />
+          <option value="numpy" />
+          <option value="python-snap7" />
+          <option value="Pillow" />
+          <option value="pandas" />
+          <option value="openpyxl" />
+          <option value="reportlab" />
+          <option value="websockets" />
+          <option value="daphne" />
+          <option value="twisted" />
+          <option value="djangorestframework" />
+          <option value="drf-spectacular" />
+          <option value="PyJWT" />
+          <option value="scikit-image" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
