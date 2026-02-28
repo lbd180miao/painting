@@ -41,7 +41,7 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "bootstrap5",  # 添加bootstrap5
+    "django_bootstrap5",  # 添加bootstrap5
     "data",  # 添加data app
 ]
 
