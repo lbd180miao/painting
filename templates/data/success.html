@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}导入成功 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="alert alert-success" role="alert">
+                <h4 class="alert-heading">导入成功!</h4>
+                <p>{{ message }}</p>
+                <hr>
+                <p class="mb-0">
+                    <a href="{% url 'data:import' %}" class="btn btn-primary">继续导入</a>
+                    <a href="{% url 'data:inventory_list' %}" class="btn btn-secondary">查看库存</a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

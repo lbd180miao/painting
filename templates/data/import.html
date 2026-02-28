@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% load static %}
+
+{% block title %}数据导入 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="mb-4">数据导入</h2>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">选择导入类型</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+
+                        <div class="row">
+                            <!-- 涂装库存导入 -->
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">涂装库存</h6>
+                                        <p class="card-text text-muted">
+                                            导入涂装库存数据<br>
+                                            <small>必需列: 物料, 当前库存</small>
+                                        </p>
+                                        <input type="radio" name="import_type" value="inventory" class="form-check-input" required>
+                                        <label class="form-check-label">选择此项</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 注塑库存导入 -->
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">注塑库存</h6>
+                                        <p class="card-text text-muted">
+                                            导入注塑库存数据<br>
+                                            <small>必需列: 物料, 当前库存</small>
+                                        </p>
+                                        <input type="radio" name="import_type" value="injection" class="form-check-input" required>
+                                        <label class="form-check-label">选择此项</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 安全库存导入 -->
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">安全库存</h6>
+                                        <p class="card-text text-muted">
+                                            导入安全库存数据<br>
+                                            <small>必需列: 物料, 安全库存</small>
+                                        </p>
+                                        <input type="radio" name="import_type" value="safety" class="form-check-input" required>
+                                        <label class="form-check-label">选择此项</label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 总成拉动数据导入 -->
+                            <div class="col-md-6 mb-3">
+                                <div class="card h-100">
+                                    <div class="card-body">
+                                        <h6 class="card-title">总成拉动数据</h6>
+                                        <p class="card-text text-muted">
+                                            导入总成拉动数据<br>
+                                            <small>必需列: min, 产品名称, 颜色</small>
+                                        </p>
+                                        <input type="radio" name="import_type" value="assembly" class="form-check-input" required>
+                                        <label class="form-check-label">选择此项</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-4">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label for="file" class="form-label">选择Excel文件</label>
+                                    <input type="file" class="form-control" id="file" name="file" accept=".xlsx,.xls" required>
+                                    <div class="form-text">支持.xlsx和.xls格式</div>
+                                </div>
+
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-upload"></i> 导入数据
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- 导入说明 -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">导入说明</h5>
+                </div>
+                <div class="card-body">
+                    <h6>文件格式要求</h6>
+                    <ul>
+                        <li><strong>涂装库存/注塑库存:</strong> Excel文件需包含"物料"和"当前库存"列</li>
+                        <li><strong>安全库存:</strong> Excel文件需包含"物料"和"安全库存"列</li>
+                        <li><strong>总成拉动数据:</strong> Excel文件需包含"min"、"产品名称"和"颜色"列</li>
+                    </ul>
+
+                    <h6 class="mt-3">物料名称格式</h6>
+                    <p>物料名称应遵循以下格式: <code>车型+位置+颜色</code></p>
+                    <ul>
+                        <li>位置类型: <code>front</code> (前) 或 <code>rear</code> (后)</li>
+                        <li>示例: <code>A0front red</code>, <code>A1rear black</code></li>
+                    </ul>
+
+                    <h6 class="mt-3">注意事项</h6>
+                    <ul>
+                        <li>导入时会自动创建不存在的车型、颜色和产品</li>
+                        <li>总成拉动数据导入时会清除旧数据</li>
+                        <li>库存数据会更新现有记录或创建新记录</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
