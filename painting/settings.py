@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "django_bootstrap5",  # 添加bootstrap5
     "data",  # 添加data app
+    "schedule",  # 添加schedule app
 ]
 
 MIDDLEWARE = [
