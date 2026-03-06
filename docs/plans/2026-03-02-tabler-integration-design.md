@@ -1,56 +1,153 @@
-# Tabler Bootstrap 5 模板集成设计方案
+# Tabler Bootstrap 5 模板集成实施计划
 
-**日期**: 2026-03-02
-**项目**: Painting (基于 Django 6.0 的排产与数据管理平台)
-**主题**: 前端页面现代化与体验重构
+> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-## 1. 概述与目标
-当前项目使用 Django 渲染原生或基于 `django_bootstrap5` 的简单视图。本项目致力于将当前纯粹由于功能堆砌产生的基础界面，升级为基于高质量开源模板 **Tabler** 的现代化企业级控制台 (Enterprise Dashboard)。
+**Goal:** 将现有的 Django 基础应用界面重构为基于 Tabler 的现代化企业级 Dashboard。
 
-目标是通过最小的侵入性修改，大幅提升系统界面的：
-- 专业度与信任感
-- 信息密度处理能力 (复杂表格与表单)
-- 响应式体验 (支持深色模式与移动端操作)
+**Architecture:** 以纯静态资源方式（无构建管线）全量引入 Tabler 的预编译静态包，分步骤全面重写 Django 的 `base.html` 宏观布局和各独立 app 的视图模板。
 
-## 2. 基础布局架构设计
-页面将在 `templates/base.html` 中进行彻底重构，采用经典的企业级布局流向：
+**Tech Stack:** Django 6.0, Bootstrap 5, Tabler UI, HTML/CSS.
 
-### 2.1 导航结构
-* **左侧深色边栏 (Vertical Sidebar)**
-    * 包含项目 Logo 和核心模块分类。
-    * **主数据管理 (Data)**: 折叠菜单形式组织 (产品、颜色、注塑机等)。
-    * **排产中心 (Schedule)**: 执行算法、查看结果。
-    * **消息通知 (Notifications)**。
-    * **系统设置 (Settings)**: 全局系统参数。
-* **顶部导航栏 (Header Navbar)**
-    * 预留全局搜索框。
-    * 消息徽章 (未读通知红点)。
-    * 用户控制台 (User Menu): 头像、修改个人资料、登出。
-* **内容主体 (Page Body)**
-    * 背景设为浅灰 (`bg-light`)，凸显核心数据层级。
-    * 统一的页头组件 (Page Header): 包含页面标题及其关联动作 (如“新增”、“导出 Excel”)。
+---
 
-## 3. 核心组件规范
-* **卡片 (Cards)**: 所有主内容区 (表单、图表、表格) 均需包裹在带有柔和阴影的空心卡片内。
-* **数据表格 (Data Tables)**:
-    * 运用 Tabler 的 `table-responsive` 容器和 `card-table`。
-    * 对于密集型数据列表，启用表格悬浮状态 (`table-hover`) 和小尺寸单元格 (`table-vcenter`)。
-* **表单 (Forms)**:
-    * 继续利用 `django_bootstrap5` 生成。
-    * 结合 Tabler 的表单行间距规范，提升输入框聚焦状态的视觉反馈。
-* **仪表板控件 (Widgets)**:
-    * 后续涉及排产分析页面时，利用数据卡块展现统计数据。
+### Task 1: 获取并集成 Tabler 静态资源
 
-## 4. 静态资源获取与集成策略
-基于项目的当前状态 (无复杂的前端构建管线如 Webpack/Vite 介入)，将采用传统的静态文件加载方式：
-1. **获取资源**: 从 Tabler 官方发版包中提取编译完成的 `CSS` 和 `JS` 文件。
-2. **存放路径**: `static/css/tabler.min.css` 和 `static/js/tabler.min.js`。
-3. **字体覆盖**: 使用系统默认的现代无衬线字体栈或引入 `Inter` 字体。
-4. **图标**: 直接引入 Tabler Icons 的 Webfont 以及配套 SVG 提供轻量级图形支持。
+**Files:**
+- Create: `static/tabler/` (及下属的 css/js/fonts 目录)
 
-## 5. 迁移与风险控制
-现有页面主要是 Django 的模板继承语法组成，主要风险在于 `class` 的替换。
-我们将使用渐进式重构：
-1. 优先重构全局 `base.html` 产生宏观结构变动。
-2. 逐一应用替换：`accounts` -> `data` 列表页 -> `schedule` 结果页 -> `notifications`。
-3. 确保功能 (如按钮表单提交、导出链接) 不受结构重写影响。
+**Step 1: 下载最新版 Tabler 预编译包**
+
+利用终端下载解压 Tabler。由于无需构建，直接取其 dist 资源。
+
+```bash
+mkdir -p static/tabler/css static/tabler/js
+# 这里我们假设通过 wget 或 curl 获取最新的 release 包
+curl -fsSL https://github.com/tabler/tabler/releases/download/v1.0.0-beta20/tabler.zip -o tabler.zip
+unzip -q tabler.zip -d dist-temp
+cp -R dist-temp/css/* static/tabler/css/
+cp -R dist-temp/js/* static/tabler/js/
+rm -rf dist-temp tabler.zip
+```
+
+**Step 2: 验证静态资源目录结构**
+
+运行命令：`ls -la static/tabler/css && ls -la static/tabler/js`
+预期结果：看到 `tabler.min.css` 和 `tabler.min.js` 等核心文件。由于未涉及 Python 逻辑测试，此步骤仅验证文件获取成功。
+
+**Step 3: Commit**
+
+```bash
+git add static/tabler/
+git commit -m "chore: fetch and integrate tabler static assets"
+```
+
+
+### Task 2: 重构基础布局模板 (base.html)
+
+**Files:**
+- Modify: `templates/base.html`
+
+**Step 1: 写入基础框架代码（带左侧边栏和顶栏）**
+
+我们需要重写基础模板。在此步骤中移除原有的简单 Bootstrap 导航，引入完整的 Tabler HTML 框架：包含 `<aside class="navbar navbar-vertical...>` (侧边栏) 和 `<header class="navbar...">` (包含头像和消息的顶置导航栏)。
+
+*(代码由于较长，在实际实施时通过 Edit 或 Write 工具写入具体文件。包含引入的静态文件标签 `<link rel="stylesheet" href="{% static 'tabler/css/tabler.min.css' %}">` 等)*
+
+**Step 2: 启动本地服务器验证渲染**
+
+运行命令检查静态文件解析是否有报错。
+
+```bash
+python manage.py check
+```
+预期：无语法错误抛出。实际上要在浏览器中刷新确认全局 CSS 是否已应用。由于采用 TDD 对模板重构有局限，此处采用服务器启动检查替代。
+
+**Step 3: Commit**
+
+```bash
+git add templates/base.html
+git commit -m "feat: refactor global base.html with clean tabler layout"
+```
+
+
+### Task 3: 改造主数据模块列表页 (Data App)
+
+**Files:**
+- Modify: `templates/data/product_list.html`
+- Modify: `templates/data/color_list.html`
+- (及其余 data 模块内的列表和表单页口)
+
+**Step 1: 使用卡片和 Table 组件包裹数据**
+
+将原先裸露的 `django-tables2` 或原生 Bootstrap 表格结构，重构为符合 Tabler 规范的 `card` 和 `table-responsive` 容器：
+
+```html
+<div class="card">
+  <div class="card-header">
+    <h3 class="card-title">产品列表</h3>
+    <!-- 动作按钮如新增放在此处 -->
+  </div>
+  <div class="table-responsive">
+    <table class="table card-table table-vcenter text-nowrap datatable">
+       <!-- 原有循环变量填充 -->
+    </table>
+  </div>
+</div>
+```
+
+**Step 2: 页面验证**
+
+本地启动项目，并验证对应页面。确保不再有错乱的边距，表格与外层卡片完美融合。
+
+**Step 3: Commit**
+
+```bash
+git add templates/data/
+git commit -m "style: upgrade data app templates to tabler card components"
+```
+
+
+### Task 4: 改造排产计算结果页 (Schedule App)
+
+**Files:**
+- Modify: `templates/schedule/history.html`
+- Modify: `templates/schedule/运算结果页` (如果有)
+
+**Step 1: 引入数据仪表块 (Widgets)**
+
+排产结果页通常信息量大，引入 Tabler 的进度条小组件和状态文本来展示（例如良率、进度百分比、各机器的占用率）。
+将按钮升级为含有图标的块级操作按钮（如“导出 Excel”替换为带下载 SVG 图标的优雅按钮）。
+
+**Step 2: 验证样式展示**
+
+本地启动服务器预览排产结果结构。
+
+**Step 3: Commit**
+
+```bash
+git add templates/schedule/
+git commit -m "style: modernize schedule results and history view with widgets"
+```
+
+
+### Task 5: 优化账号与消息页面 (Accounts & Notifications)
+
+**Files:**
+- Modify: `templates/auth/login.html` (及其余账号相关页面)
+- Modify: `templates/notifications/...`
+
+**Step 1: 将登录页转为居中卡片**
+
+将原有的登录/注册认证页改造成全屏居中、纯白背景卡的现代 SaaS 登录页风格。
+通知列表重写为带未读/已读标识的优雅列表组（List Group）。
+
+**Step 2: 界面渲染检查**
+
+访问 `/login` 或相应的通知路由，确认布局没有因为全量引入的 css 导致组件塌陷。
+
+**Step 3: Commit**
+
+```bash
+git add templates/auth/ templates/notifications/
+git commit -m "style: refresh auth pages into centered saas layout"
+```

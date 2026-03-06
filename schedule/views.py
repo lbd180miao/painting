@@ -21,24 +21,31 @@ def calculate_view(request):
             short_term_duration = int(request.POST.get('short_term_duration', 30))
             long_term_duration = int(request.POST.get('long_term_duration', 120))
 
-            # Load system parameters
+            # Load system parameters safely
             params = SystemParameter.objects.all()
             param_dict = {p.param_key: p for p in params}
+
+            def get_int(key, default):
+                return param_dict[key].get_int_value() if key in param_dict else default
+
+            def get_float(key, default):
+                return param_dict[key].get_float_value() if key in param_dict else default
 
             # Create schedule record
             record = ScheduleRecord.objects.create(
                 short_term_duration=short_term_duration,
                 long_term_duration=long_term_duration,
                 status='pending',
-                cycle_time_min=param_dict.get('CYCLE_TIME_MIN', 90).get_int_value() if param_dict.get('CYCLE_TIME_MIN') else 90,
-                avg_hanging_count=param_dict.get('AVG_HANGING_COUNT', 6).get_int_value() if param_dict.get('AVG_HANGING_COUNT') else 6,
-                total_vehicles_in_line=param_dict.get('TOTAL_VEHICLES', 45).get_int_value() if param_dict.get('TOTAL_VEHICLES') else 45,
-                short_term_capacity=param_dict.get('SHORT_TERM_CAPACITY', 80).get_float_value() if param_dict.get('SHORT_TERM_CAPACITY') else 80.0,
-                long_term_capacity=param_dict.get('LONG_TERM_CAPACITY', 60).get_float_value() if param_dict.get('LONG_TERM_CAPACITY') else 60.0,
-                front_rear_balance_d=param_dict.get('FRONT_REAR_BALANCE_D', 3).get_int_value() if param_dict.get('FRONT_REAR_BALANCE_D') else 3,
-                group_capacity_limit=param_dict.get('GROUP_CAPACITY_LIMIT', 15).get_float_value() if param_dict.get('GROUP_CAPACITY_LIMIT') else 15.0,
-                total_vehicles=param_dict.get('TOTAL_VEHICLES', 45).get_int_value() if param_dict.get('TOTAL_VEHICLES') else 45
+                cycle_time_min=get_int('CYCLE_TIME_MIN', 300),
+                avg_hanging_count=get_int('AVG_HANGING_COUNT', 4),
+                total_vehicles_in_line=get_int('TOTAL_VEHICLES', 100),
+                short_term_capacity=get_float('SHORT_TERM_CAPACITY', 40.0),
+                long_term_capacity=get_float('LONG_TERM_CAPACITY', 60.0),
+                front_rear_balance_d=get_int('FRONT_REAR_BALANCE_D', 15),
+                group_capacity_limit=get_float('GROUP_CAPACITY_LIMIT', 40.0),
+                total_vehicles=get_int('TOTAL_VEHICLES', 100),
             )
+
 
             # Run calculation
             algorithm = SchedulingAlgorithm()
@@ -153,7 +160,7 @@ def history_list_view(request):
     """
     List all calculation records
     """
-    records = ScheduleRecord.objects.all().order_by('-record_time')
+    records = list(ScheduleRecord.objects.all().order_by('-record_time'))
 
     # Add summary data to each record
     for record in records:
@@ -165,8 +172,15 @@ def history_list_view(request):
         record.long_vehicles = long_vehicles
         record.total_vehicles_used = short_vehicles + long_vehicles
 
+    completed_count = sum(1 for r in records if r.status == 'completed')
+    failed_count = sum(1 for r in records if r.status == 'failed')
+    latest_time = records[0].record_time if records else None
+
     context = {
         'records': records,
+        'completed_count': completed_count,
+        'failed_count': failed_count,
+        'latest_time': latest_time,
     }
 
     return render(request, 'schedule/history.html', context)
