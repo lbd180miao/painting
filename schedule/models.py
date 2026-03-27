@@ -7,6 +7,7 @@ class ScheduleRecord(models.Model):
         ('pending', '计算中'),
         ('completed', '已完成'),
         ('failed', '失败'),
+        ('rolled_back', '已回退'),
     ]
 
     record_time = models.DateTimeField(auto_now_add=True, verbose_name="记录时间")
@@ -71,6 +72,7 @@ class SchedulePlan(models.Model):
     product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="产品")
     plan_type = models.CharField(max_length=20, choices=[('short', '短期'), ('long', '长期')], verbose_name="计划类型")
     vehicle_count = models.IntegerField(verbose_name="生产车数")
+    note = models.CharField(max_length=255, blank=True, verbose_name="计划说明")
 
     class Meta:
         verbose_name = "排产计划"
@@ -83,9 +85,30 @@ class FormationSlot(models.Model):
     slot_number = models.IntegerField(verbose_name="槽位号")
     product = models.ForeignKey(Product, on_delete=models.CASCADE, null=True, blank=True, verbose_name="产品")
     plan_type = models.CharField(max_length=20, choices=[('short', '短期'), ('long', '长期')], verbose_name="计划类型")
+    is_reused = models.BooleanField(default=False, verbose_name="是否复用上一轮槽位")
 
     class Meta:
         verbose_name = "阵型槽位"
         verbose_name_plural = "阵型槽位"
         unique_together = ['record', 'slot_number']
         ordering = ['slot_number']
+
+
+class InventorySnapshot(models.Model):
+    """排产库存快照"""
+    INVENTORY_TYPE_CHOICES = [
+        ('paint', '涂装库存'),
+        ('injection', '注塑库存'),
+    ]
+
+    record = models.ForeignKey(ScheduleRecord, on_delete=models.CASCADE, related_name='inventory_snapshots', verbose_name="排产记录")
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, verbose_name="产品")
+    inventory_type = models.CharField(max_length=20, choices=INVENTORY_TYPE_CHOICES, verbose_name="库存类型")
+    current_quantity = models.IntegerField(verbose_name="计算前库存")
+    delta_quantity = models.IntegerField(verbose_name="库存变动")
+    updated_quantity = models.IntegerField(verbose_name="更新后库存")
+
+    class Meta:
+        verbose_name = "库存快照"
+        verbose_name_plural = "库存快照"
+        ordering = ['inventory_type', 'product']

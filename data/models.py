@@ -22,13 +22,52 @@ class Color(models.Model):
     name = models.CharField(max_length=50, unique=True, verbose_name="颜色名称")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
+    DISPLAY_MAP = {
+        "red": ("红", "#d9485f", "#ffffff"),
+        "blue": ("蓝", "#2563eb", "#ffffff"),
+        "white": ("白", "#f8fafc", "#111827"),
+        "black": ("黑", "#111827", "#ffffff"),
+        "gray": ("灰", "#6b7280", "#ffffff"),
+        "grey": ("灰", "#6b7280", "#ffffff"),
+        "silver": ("银", "#cbd5e1", "#111827"),
+        "green": ("绿", "#16a34a", "#ffffff"),
+        "yellow": ("黄", "#facc15", "#111827"),
+        "orange": ("橙", "#f97316", "#ffffff"),
+        "brown": ("棕", "#92400e", "#ffffff"),
+        "purple": ("紫", "#7c3aed", "#ffffff"),
+        "pink": ("粉", "#ec4899", "#ffffff"),
+    }
+
     class Meta:
         verbose_name = "颜色"
         verbose_name_plural = "颜色"
         ordering = ['name']
 
     def __str__(self):
+        return self.display_name
+
+    @property
+    def display_name(self):
+        key = (self.name or "").strip().lower()
+        if key in self.DISPLAY_MAP:
+            return self.DISPLAY_MAP[key][0]
         return self.name
+
+    @property
+    def display_hex(self):
+        key = (self.name or "").strip().lower()
+        if key in self.DISPLAY_MAP:
+            return self.DISPLAY_MAP[key][1]
+        palette = ["#0f766e", "#1d4ed8", "#be185d", "#9a3412", "#4338ca", "#15803d"]
+        seed = sum(ord(ch) for ch in key) if key else 0
+        return palette[seed % len(palette)]
+
+    @property
+    def display_text_color(self):
+        key = (self.name or "").strip().lower()
+        if key in self.DISPLAY_MAP:
+            return self.DISPLAY_MAP[key][2]
+        return "#ffffff"
 
 
 class PositionType(models.Model):
@@ -75,15 +114,13 @@ class Product(models.Model):
         ordering = ['vehicle_model', 'color', 'position_type']
 
     def __str__(self):
-        return f"{self.vehicle_model} {self.color} {self.get_position_type_display()}"
+        return f"{self.vehicle_model} {self.color} {self.position_type}"
 
 
 class Inventory(models.Model):
     """涂装库存"""
     product = models.OneToOneField(Product, on_delete=models.CASCADE, verbose_name="产品", related_name='inventory')
     current_quantity = models.IntegerField(default=0, verbose_name="当前库存", validators=[MinValueValidator(0)])
-    updated_quantity = models.IntegerField(null=True, blank=True, verbose_name="更新后库存", validators=[MinValueValidator(0)])
-    update_time = models.DateTimeField(null=True, blank=True, verbose_name="更新时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
@@ -100,8 +137,6 @@ class InjectionInventory(models.Model):
     """注塑库存"""
     product = models.OneToOneField(Product, on_delete=models.CASCADE, verbose_name="产品", related_name='injection_inventory')
     current_quantity = models.IntegerField(default=0, verbose_name="当前库存", validators=[MinValueValidator(0)])
-    updated_quantity = models.IntegerField(null=True, blank=True, verbose_name="更新后库存", validators=[MinValueValidator(0)])
-    update_time = models.DateTimeField(null=True, blank=True, verbose_name="更新时间")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
@@ -192,3 +227,35 @@ class SystemParameter(models.Model):
             return int(float(self.param_value))
         except (ValueError, TypeError):
             return 0
+
+
+class ImportRecord(models.Model):
+    """导入归档记录"""
+    IMPORT_TYPE_CHOICES = [
+        ("inventory", "涂装库存"),
+        ("injection", "注塑库存"),
+        ("safety", "安全库存"),
+        ("assembly", "总成拉动"),
+    ]
+    STATUS_CHOICES = [
+        ("success", "成功"),
+        ("partial", "部分成功"),
+        ("failed", "失败"),
+    ]
+
+    import_type = models.CharField(max_length=20, choices=IMPORT_TYPE_CHOICES, verbose_name="导入类型")
+    file_name = models.CharField(max_length=255, verbose_name="文件名")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, verbose_name="状态")
+    message = models.CharField(max_length=255, verbose_name="结果说明")
+    success_count = models.PositiveIntegerField(default=0, verbose_name="成功条数")
+    error_count = models.PositiveIntegerField(default=0, verbose_name="失败条数")
+    error_details = models.JSONField(default=list, blank=True, verbose_name="错误明细")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
+
+    class Meta:
+        verbose_name = "导入记录"
+        verbose_name_plural = "导入记录"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_import_type_display()} - {self.file_name}"

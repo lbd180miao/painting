@@ -2,15 +2,59 @@
 
 {% load static %}
 {% load schedule_extras %}
+{% load color_extras %}
 
 {% block title %}计算结果 #{{ record.id }} - 涂装生产排程管理系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== 折叠卡片样式 ===== */
+    .card-collapsible .card-header {
+        cursor: pointer;
+        user-select: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .card-collapsible .card-header:hover {
+        background-color: rgba(0,0,0,.04);
+    }
+    .card-collapsible .card-header .header-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex: 1;
+    }
+    .card-collapsible .collapse-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        background: rgba(0,0,0,.07);
+        flex-shrink: 0;
+        transition: transform .25s ease;
+    }
+    .card-collapsible.open .collapse-icon {
+        transform: rotate(90deg);
+    }
+    .card-collapsible .card-body-wrap {
+        display: none;
+        overflow: hidden;
+    }
+    .card-collapsible.open .card-body-wrap {
+        display: block;
+    }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container">
     <div class="row">
         <div class="col-md-12">
             <div class="d-flex justify-content-between align-items-center mb-4">
-                <h2>计算结果 #{{ record.id }}</h2>
+                <h2 class="stat-highlight">计算结果 #{{ record.id }}</h2>
                 <div>
                     <a href="{% url 'schedule:export' record.id %}" class="btn btn-success">导出Excel</a>
                     <a href="{% url 'schedule:calculate' %}" class="btn btn-secondary">返回计算</a>
@@ -18,345 +62,662 @@
                 </div>
             </div>
 
-            <!-- 记录信息 -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">记录信息</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-3">
-                            <p><strong>计算时间:</strong> {{ record.record_time|date:"Y-m-d H:i" }}</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>状态:</strong>
-                                {% if record.status == 'completed' %}
-                                    <span class="badge bg-success">已完成</span>
-                                {% elif record.status == 'pending' %}
-                                    <span class="badge bg-warning">计算中</span>
-                                {% else %}
-                                    <span class="badge bg-danger">失败</span>
-                                {% endif %}
-                            </p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>短期时长:</strong> {{ record.short_term_duration }} 分钟</p>
-                        </div>
-                        <div class="col-md-3">
-                            <p><strong>长期时长:</strong> {{ record.long_term_duration }} 分钟</p>
+            {# ===== 汇总统计卡片（始终展开，不折叠）===== #}
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card h-100 card-stagger">
+                        <div class="card-body">
+                            <div class="text-muted small mb-2">短期缺货物料</div>
+                            <div class="fs-3 fw-bold text-danger">{{ short_shortage_count }}</div>
+                            <div class="text-muted">短期终值小于 0 的物料数</div>
                         </div>
                     </div>
-                    {% if record.error_message %}
-                        <div class="alert alert-danger">
-                            <strong>错误信息:</strong> {{ record.error_message }}
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100 card-stagger">
+                        <div class="card-body">
+                            <div class="text-muted small mb-2">长期风险组</div>
+                            <div class="fs-3 fw-bold text-warning">{{ long_risk_group_count }}</div>
+                            <div class="text-muted">组风险值大于 0 的车型颜色组</div>
                         </div>
-                    {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100 card-stagger">
+                        <div class="card-body">
+                            <div class="text-muted small mb-2">复用槽位</div>
+                            <div class="fs-3 fw-bold text-success">{{ reused_slot_count }}</div>
+                            <div class="text-muted">沿用上一轮阵型的槽位数</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100 card-stagger">
+                        <div class="card-body">
+                            <div class="text-muted small mb-2">空槽位</div>
+                            <div class="fs-3 fw-bold">{{ empty_slot_count }}</div>
+                            <div class="text-muted">本轮未排入生产的剩余槽位</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card h-100 card-stagger">
+                        <div class="card-body">
+                            <div class="text-muted small mb-2">注塑受限物料</div>
+                            <div class="fs-3 fw-bold text-primary">{{ injection_constrained_count }}</div>
+                            <div class="text-muted">因注塑不足被截断的计划物料数</div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
-            <!-- 短期需求表 -->
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">短期需求表</h5>
+            {# ===== 注塑约束摘要 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-injection-constraint">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">注塑约束摘要</h5>
+                    </div>
+                    <span class="badge bg-primary">合计截断 {{ injection_constrained_vehicle_loss }} 车</span>
+                </div>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted small mb-1">短期注塑约束</div>
+                                    <div class="fw-bold">受限 {{ injection_constraint_phase_breakdown.short.count }} 项</div>
+                                    <div class="text-muted">累计截断 {{ injection_constraint_phase_breakdown.short.vehicle_loss }} 车</div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="border rounded p-3 h-100">
+                                    <div class="text-muted small mb-1">长期注塑约束</div>
+                                    <div class="fw-bold">受限 {{ injection_constraint_phase_breakdown.long.count }} 项</div>
+                                    <div class="text-muted">累计截断 {{ injection_constraint_phase_breakdown.long.vehicle_loss }} 车</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>阶段</th><th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>需要车数</th><th>实际分配</th><th>截断车数</th><th>说明</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in injection_constrained_items %}
+                                        <tr>
+                                            <td>{{ item.phase_label }}</td>
+                                            <td>{{ item.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ item.product.color|color_chip_style }}">{{ item.product.color.display_name }}</span></td>
+                                            <td>{{ item.product.position_type.get_name_display }}</td>
+                                            <td>{{ item.needed_vehicles }}</td>
+                                            <td>{{ item.allocated_vehicles }}</td>
+                                            <td>截断 {{ item.constrained_vehicles }} 车</td>
+                                            <td>{{ item.note }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="8" class="text-center text-muted">本轮无注塑约束截断</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ===== 计划缺口摘要 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-plan-gap">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">计划缺口摘要</h5>
+                    </div>
+                    <span class="badge bg-danger">未满足 {{ plan_gap_vehicle_loss }} 车</span>
+                </div>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <p class="text-muted mb-3">本轮仍有 {{ plan_gap_count }} 个物料存在未满足需求或风险缺口。</p>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>阶段</th><th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>需要车数</th><th>实际分配</th><th>缺口车数</th><th>未满足需求</th><th>原因</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in plan_gap_items %}
+                                        <tr>
+                                            <td>{{ item.phase_label }}</td>
+                                            <td>{{ item.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ item.product.color|color_chip_style }}">{{ item.product.color.display_name }}</span></td>
+                                            <td>{{ item.product.position_type.get_name_display }}</td>
+                                            <td>{{ item.needed_vehicles }}</td>
+                                            <td>{{ item.allocated_vehicles }}</td>
+                                            <td>{{ item.gap_vehicles }}</td>
+                                            <td>{{ item.unmet_quantity }}</td>
+                                            <td>{{ item.reason }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="9" class="text-center text-muted">本轮无计划缺口</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ===== 记录信息 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-record-info">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">记录信息</h5>
+                    </div>
+                </div>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <p><strong>计算时间:</strong> {{ record.record_time|date:"Y-m-d H:i" }}</p>
+                            </div>
+                            <div class="col-md-3">
+                                <p><strong>状态:</strong>
+                                    {% if record.status == 'completed' %}
+                                        <span class="badge bg-success">已完成</span>
+                                    {% elif record.status == 'pending' %}
+                                        <span class="badge bg-warning">计算中</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">失败</span>
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-3">
+                                <p><strong>短期时长:</strong> {{ record.short_term_duration }} 分钟</p>
+                            </div>
+                            <div class="col-md-3">
+                                <p><strong>长期时长:</strong> {{ record.long_term_duration }} 分钟</p>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>短期读取区间:</strong> {{ short_window.start }} - {{ short_window.end }}</p>
+                                <p><strong>长期读取区间:</strong> {{ long_window.start }} - {{ long_window.end }}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>前后平衡 D:</strong> {{ record.front_rear_balance_d }}</p>
+                                <p><strong>车型上限:</strong> {{ record.group_capacity_limit }}%</p>
+                            </div>
+                        </div>
+                        {% if record.error_message %}
+                            <div class="alert alert-danger">
+                                <strong>错误信息:</strong> {{ record.error_message }}
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            {# ===== 短期需求表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-short-demand">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">短期需求表</h5>
+                    </div>
                     <span class="badge bg-primary">总需求: {{ short_total_demand }} 台</span>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>需求数量(台)</th>
-                                    <th>生产数量(台)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for demand in short_demands %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td>{{ demand.product.vehicle_model.name }}</td>
-                                        <td>{{ demand.product.color.name }}</td>
-                                        <td>{{ demand.product.position_type.get_name_display }}</td>
-                                        <td>{{ demand.demand_quantity }}</td>
-                                        <td>{{ demand.production_quantity }}</td>
+                                        <th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>需求数量(台)</th><th>生产数量(台)</th>
                                     </tr>
-                                {% empty %}
-                                    <tr>
-                                        <td colspan="5" class="text-center">暂无数据</td>
+                                </thead>
+                                <tbody>
+                                    {% for demand in short_demands %}
+                                        <tr>
+                                            <td>{{ demand.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ demand.product.color|color_chip_style }}">{{ demand.product.color.display_name }}</span></td>
+                                            <td>{{ demand.product.position_type.get_name_display }}</td>
+                                            <td>{{ demand.demand_quantity }}</td>
+                                            <td>{{ demand.production_quantity }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="5" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="table-primary">
+                                        <td colspan="3"><strong>合计</strong></td>
+                                        <td><strong>{{ short_total_demand }}</strong></td>
+                                        <td><strong>{{ short_total_production }}</strong></td>
                                     </tr>
-                                {% endfor %}
-                            </tbody>
-                            <tfoot>
-                                <tr class="table-primary">
-                                    <td colspan="3"><strong>合计</strong></td>
-                                    <td><strong>{{ short_total_demand }}</strong></td>
-                                    <td><strong>{{ short_total_production }}</strong></td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                                </tfoot>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 短期风险表 -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">短期风险表</h5>
+            {# ===== 短期风险表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-short-risk">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">短期风险表</h5>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>排名</th>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>终值</th>
-                                    <th>安全库存</th>
-                                    <th>状态</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for risk in short_risks %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td>{{ risk.rank }}</td>
-                                        <td>{{ risk.product.vehicle_model.name }}</td>
-                                        <td>{{ risk.product.color.name }}</td>
-                                        <td>{{ risk.product.position_type.get_name_display }}</td>
-                                        <td>{{ risk.final_value }}</td>
-                                        <td>{{ risk.safety_stock }}</td>
-                                        <td>
-                                            {% if risk.final_value < 0 %}
-                                                <span class="badge bg-danger">缺货</span>
-                                            {% else %}
-                                                <span class="badge bg-success">正常</span>
-                                            {% endif %}
-                                        </td>
+                                        <th>排名</th><th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>终值</th><th>安全库存</th><th>状态</th>
                                     </tr>
-                                {% empty %}
-                                    <tr>
-                                        <td colspan="7" class="text-center">暂无数据</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {% for risk in short_risks %}
+                                        <tr>
+                                            <td>{{ risk.rank }}</td>
+                                            <td>{{ risk.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ risk.product.color|color_chip_style }}">{{ risk.product.color.display_name }}</span></td>
+                                            <td>{{ risk.product.position_type.get_name_display }}</td>
+                                            <td>{{ risk.final_value }}</td>
+                                            <td>{{ risk.safety_stock }}</td>
+                                            <td>
+                                                {% if risk.final_value < 0 %}
+                                                    <span class="badge bg-danger">缺货</span>
+                                                {% else %}
+                                                    <span class="badge bg-success">正常</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="7" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 短期计划表 -->
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">短期计划表</h5>
+            {# ===== 短期计划表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-short-plan">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">短期计划表</h5>
+                    </div>
                     <span class="badge bg-primary">总车数: {{ short_total_vehicles }}</span>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>每车挂数</th>
-                                    <th>生产车数</th>
-                                    <th>预计产量</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for plan in short_plans %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td>{{ plan.product.vehicle_model.name }}</td>
-                                        <td>{{ plan.product.color.name }}</td>
-                                        <td>{{ plan.product.position_type.get_name_display }}</td>
-                                        <td>{{ plan.product.hanging_count_per_vehicle }}</td>
-                                        <td>{{ plan.vehicle_count }}</td>
-                                        <td>{{ plan.vehicle_count|multiply:plan.product.hanging_count_per_vehicle }}</td>
+                                        <th>车型</th><th>颜色</th><th>位置</th><th>计划说明</th>
+                                        <th>每车挂数</th><th>生产车数</th><th>预计产量</th>
                                     </tr>
-                                {% empty %}
-                                    <tr>
-                                        <td colspan="6" class="text-center">暂无数据</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {% for plan in short_plans %}
+                                        <tr>
+                                            <td>{{ plan.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ plan.product.color|color_chip_style }}">{{ plan.product.color.display_name }}</span></td>
+                                            <td>{{ plan.product.position_type.get_name_display }}</td>
+                                            <td>{{ plan.note|default:"-" }}</td>
+                                            <td>{{ plan.product.hanging_count_per_vehicle }}</td>
+                                            <td>{{ plan.vehicle_count }}</td>
+                                            <td>{{ plan.vehicle_count|multiply:plan.product.hanging_count_per_vehicle }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="7" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 长期需求表 -->
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">长期需求表</h5>
+            {# ===== 长期需求表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-long-demand">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">长期需求表</h5>
+                    </div>
                     <span class="badge bg-primary">总需求: {{ long_total_demand }} 台</span>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>需求数量(台)</th>
-                                    <th>生产数量(台)</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for demand in long_demands %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td>{{ demand.product.vehicle_model.name }}</td>
-                                        <td>{{ demand.product.color.name }}</td>
-                                        <td>{{ demand.product.position_type.get_name_display }}</td>
-                                        <td>{{ demand.demand_quantity }}</td>
-                                        <td>{{ demand.production_quantity }}</td>
+                                        <th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>需求数量(台)</th><th>生产数量(台)</th>
                                     </tr>
-                                {% empty %}
-                                    <tr>
-                                        <td colspan="5" class="text-center">暂无数据</td>
+                                </thead>
+                                <tbody>
+                                    {% for demand in long_demands %}
+                                        <tr>
+                                            <td>{{ demand.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ demand.product.color|color_chip_style }}">{{ demand.product.color.display_name }}</span></td>
+                                            <td>{{ demand.product.position_type.get_name_display }}</td>
+                                            <td>{{ demand.demand_quantity }}</td>
+                                            <td>{{ demand.production_quantity }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="5" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                                <tfoot>
+                                    <tr class="table-primary">
+                                        <td colspan="3"><strong>合计</strong></td>
+                                        <td><strong>{{ long_total_demand }}</strong></td>
+                                        <td><strong>{{ long_total_production }}</strong></td>
                                     </tr>
-                                {% endfor %}
-                            </tbody>
-                            <tfoot>
-                                <tr class="table-primary">
-                                    <td colspan="3"><strong>合计</strong></td>
-                                    <td><strong>{{ long_total_demand }}</strong></td>
-                                    <td><strong>{{ long_total_production }}</strong></td>
-                                </tr>
-                            </tfoot>
-                        </table>
+                                </tfoot>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 长期风险表 -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">长期风险表</h5>
+            {# ===== 长期风险表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-long-risk">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">长期风险表</h5>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>排名</th>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>终值</th>
-                                    <th>安全库存</th>
-                                    <th>风险值</th>
-                                    <th>组风险值</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for risk in long_risks %}
-                                    <tr>
-                                        <td>{{ risk.rank }}</td>
-                                        <td>{{ risk.product.vehicle_model.name }}</td>
-                                        <td>{{ risk.product.color.name }}</td>
-                                        <td>{{ risk.product.position_type.get_name_display }}</td>
-                                        <td>{{ risk.final_value }}</td>
-                                        <td>{{ risk.safety_stock }}</td>
-                                        <td>{{ risk.risk_value }}</td>
-                                        <td>{{ risk.group_risk_value }}</td>
-                                    </tr>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="mb-4">
+                            <h6 class="mb-3">长期组风险摘要</h6>
+                            <div class="row">
+                                {% for item in long_risk_group_summaries %}
+                                    <div class="col-md-4 mb-3">
+                                        <div class="border rounded p-3 h-100">
+                                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                                <strong>{{ item.group_label }}</strong>
+                                                {% if item.risk_level == '高风险组' %}
+                                                    <span class="badge bg-danger">{{ item.risk_level }}</span>
+                                                {% elif item.risk_level == '关注组' %}
+                                                    <span class="badge bg-warning text-dark">{{ item.risk_level }}</span>
+                                                {% else %}
+                                                    <span class="badge bg-success">{{ item.risk_level }}</span>
+                                                {% endif %}
+                                            </div>
+                                            <div class="text-muted small mb-2">组风险值 {{ item.group_risk_value }}</div>
+                                            <div class="small">
+                                                {% for position in item.positions %}
+                                                    <div>{{ position.position }}: 风险值 {{ position.risk_value }}</div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
                                 {% empty %}
-                                    <tr>
-                                        <td colspan="8" class="text-center">暂无数据</td>
-                                    </tr>
+                                    <div class="col-12"><div class="text-muted">暂无长期组风险摘要</div></div>
                                 {% endfor %}
-                            </tbody>
-                        </table>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>排名</th><th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>终值</th><th>安全库存</th><th>风险值</th><th>组风险值</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for risk in long_risks %}
+                                        <tr>
+                                            <td>{{ risk.rank }}</td>
+                                            <td>{{ risk.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ risk.product.color|color_chip_style }}">{{ risk.product.color.display_name }}</span></td>
+                                            <td>{{ risk.product.position_type.get_name_display }}</td>
+                                            <td>{{ risk.final_value }}</td>
+                                            <td>{{ risk.safety_stock }}</td>
+                                            <td>{{ risk.risk_value }}</td>
+                                            <td>{{ risk.group_risk_value }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="8" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 长期计划表 -->
-            <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">长期计划表</h5>
+            {# ===== 长期计划表 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-long-plan">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">长期计划表</h5>
+                    </div>
                     <span class="badge bg-primary">总车数: {{ long_total_vehicles }}</span>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-hover">
-                            <thead>
-                                <tr>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>每车挂数</th>
-                                    <th>生产车数</th>
-                                    <th>预计产量</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for plan in long_plans %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td>{{ plan.product.vehicle_model.name }}</td>
-                                        <td>{{ plan.product.color.name }}</td>
-                                        <td>{{ plan.product.position_type.get_name_display }}</td>
-                                        <td>{{ plan.product.hanging_count_per_vehicle }}</td>
-                                        <td>{{ plan.vehicle_count }}</td>
-                                        <td>{{ plan.vehicle_count|multiply:plan.product.hanging_count_per_vehicle }}</td>
+                                        <th>车型</th><th>颜色</th><th>位置</th><th>计划说明</th>
+                                        <th>每车挂数</th><th>生产车数</th><th>预计产量</th>
                                     </tr>
-                                {% empty %}
-                                    <tr>
-                                        <td colspan="6" class="text-center">暂无数据</td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {% for plan in long_plans %}
+                                        <tr>
+                                            <td>{{ plan.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ plan.product.color|color_chip_style }}">{{ plan.product.color.display_name }}</span></td>
+                                            <td>{{ plan.product.position_type.get_name_display }}</td>
+                                            <td>{{ plan.note|default:"-" }}</td>
+                                            <td>{{ plan.product.hanging_count_per_vehicle }}</td>
+                                            <td>{{ plan.vehicle_count }}</td>
+                                            <td>{{ plan.vehicle_count|multiply:plan.product.hanging_count_per_vehicle }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="7" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- 阵型槽位 -->
-            <div class="card mb-4">
-                <div class="card-header">
-                    <h5 class="mb-0">阵型槽位</h5>
+            {# ===== 阵型槽位 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-formation">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">阵型槽位</h5>
+                    </div>
+                    <span class="badge bg-secondary">{{ formation_slot_total }} 个槽位</span>
                 </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-sm table-striped">
-                            <thead>
-                                <tr>
-                                    <th>槽位号</th>
-                                    <th>车型</th>
-                                    <th>颜色</th>
-                                    <th>位置</th>
-                                    <th>计划类型</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for slot in formation_slots %}
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <form method="get" class="row g-2 align-items-end mb-3">
+                            <div class="col-md-3">
+                                <label class="form-label">车型</label>
+                                <input type="text" name="vehicle" value="{{ formation_filters.vehicle }}" class="form-control" placeholder="例如 A0">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">颜色</label>
+                                <input type="text" name="color" value="{{ formation_filters.color }}" class="form-control" placeholder="例如 red">
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">位置</label>
+                                <input type="text" name="position" value="{{ formation_filters.position }}" class="form-control" placeholder="front / rear">
+                            </div>
+                            <div class="col-md-3 d-flex gap-2">
+                                <button type="submit" class="btn btn-primary w-100">筛选槽位</button>
+                                <a href="{% url 'schedule:result' record.id %}" class="btn btn-light">重置</a>
+                            </div>
+                        </form>
+                        <div class="text-muted small mb-3">当前显示 {{ formation_slot_total }} 个槽位</div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-striped">
+                                <thead>
                                     <tr>
-                                        <td>{{ slot.slot_number }}</td>
-                                        {% if slot.product %}
-                                            <td>{{ slot.product.vehicle_model.name }}</td>
-                                            <td>{{ slot.product.color.name }}</td>
-                                            <td>{{ slot.product.position_type.get_name_display }}</td>
-                                        {% else %}
-                                            <td colspan="3" class="text-muted">空闲</td>
-                                        {% endif %}
-                                        <td>
-                                            {% if slot.plan_type == 'short' %}
-                                                <span class="badge bg-info">短期</span>
+                                        <th>槽位号</th><th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>计划类型</th><th>来源</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for slot in formation_slots %}
+                                        <tr>
+                                            <td>{{ slot.slot_number }}</td>
+                                            {% if slot.product %}
+                                                <td>{{ slot.product.vehicle_model.name }}</td>
+                                                <td><span style="{{ slot.product.color|color_chip_style }}">{{ slot.product.color.display_name }}</span></td>
+                                                <td>{{ slot.product.position_type.get_name_display }}</td>
                                             {% else %}
-                                                <span class="badge bg-secondary">长期</span>
+                                                <td colspan="3" class="text-muted">空槽</td>
                                             {% endif %}
-                                        </td>
-                                    </tr>
-                                {% empty %}
+                                            <td>
+                                                {% if slot.plan_type == 'short' %}
+                                                    <span class="badge bg-info">短期</span>
+                                                {% elif slot.plan_type == 'long' %}
+                                                    <span class="badge bg-secondary">长期</span>
+                                                {% else %}
+                                                    <span class="badge bg-light text-dark">未排入</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                {% if slot.is_reused %}
+                                                    <span class="badge bg-success">复用上一轮</span>
+                                                {% else %}
+                                                    <span class="badge bg-light text-dark">新排入</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="6" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ===== 涂装库存更新 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-paint-inv">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">涂装库存更新</h5>
+                    </div>
+                </div>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
                                     <tr>
-                                        <td colspan="5" class="text-center">暂无数据</td>
+                                        <th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>计算前</th><th>变动</th><th>更新后</th>
                                     </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody>
+                                    {% for item in paint_inventory_snapshots %}
+                                        <tr>
+                                            <td>{{ item.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ item.product.color|color_chip_style }}">{{ item.product.color.display_name }}</span></td>
+                                            <td>{{ item.product.position_type.get_name_display }}</td>
+                                            <td>{{ item.current_quantity }}</td>
+                                            <td>{{ item.delta_quantity }}</td>
+                                            <td>{{ item.updated_quantity }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="6" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {# ===== 注塑库存更新 ===== #}
+            <div class="card mb-4 card-stagger card-collapsible" id="section-injection-inv">
+                <div class="card-header" onclick="toggleCard(this)">
+                    <div class="header-left">
+                        <span class="collapse-icon">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                        </span>
+                        <h5 class="mb-0">注塑库存更新</h5>
+                    </div>
+                </div>
+                <div class="card-body-wrap">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>车型</th><th>颜色</th><th>位置</th>
+                                        <th>计算前</th><th>变动</th><th>更新后</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in injection_inventory_snapshots %}
+                                        <tr>
+                                            <td>{{ item.product.vehicle_model.name }}</td>
+                                            <td><span style="{{ item.product.color|color_chip_style }}">{{ item.product.color.display_name }}</span></td>
+                                            <td>{{ item.product.position_type.get_name_display }}</td>
+                                            <td>{{ item.current_quantity }}</td>
+                                            <td>{{ item.delta_quantity }}</td>
+                                            <td>{{ item.updated_quantity }}</td>
+                                        </tr>
+                                    {% empty %}
+                                        <tr><td colspan="6" class="text-center">暂无数据</td></tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -364,4 +725,40 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    function toggleCard(header) {
+        const card = header.closest('.card-collapsible');
+        card.classList.toggle('open');
+    }
+
+    // 记录展开状态到 sessionStorage（刷新后保留状态）
+    document.addEventListener('DOMContentLoaded', function () {
+        const cards = document.querySelectorAll('.card-collapsible');
+        cards.forEach(function (card) {
+            const id = card.id;
+            if (!id) return;
+            const saved = sessionStorage.getItem('card-' + id);
+            if (saved === 'open') {
+                card.classList.add('open');
+            }
+        });
+
+        // 监听点击，保存状态
+        document.querySelectorAll('.card-collapsible .card-header').forEach(function (header) {
+            header.addEventListener('click', function () {
+                const card = header.closest('.card-collapsible');
+                const id = card.id;
+                if (!id) return;
+                if (card.classList.contains('open')) {
+                    sessionStorage.setItem('card-' + id, 'open');
+                } else {
+                    sessionStorage.removeItem('card-' + id);
+                }
+            });
+        });
+    });
+</script>
 {% endblock %}

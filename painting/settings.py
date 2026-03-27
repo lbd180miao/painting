@@ -50,6 +50,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "painting.middleware.PendingMigrationBlockerMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -133,6 +134,7 @@ MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # Authentication settings
-LOGIN_URL = 'accounts:login'
+# 使用绝对路径，避免 @login_required 装饰器解析命名URL时出错
+LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = 'home'
-LOGOUT_REDIRECT_URL = 'accounts:login'
+LOGOUT_REDIRECT_URL = '/accounts/login/'

@@ -32,13 +32,13 @@ class ProductAdmin(admin.ModelAdmin):
 
 @admin.register(Inventory)
 class InventoryAdmin(admin.ModelAdmin):
-    list_display = ['product', 'current_quantity', 'updated_quantity', 'update_time']
+    list_display = ['product', 'current_quantity', 'updated_at']
     search_fields = ['product__vehicle_model__name', 'product__color__name']
 
 
 @admin.register(InjectionInventory)
 class InjectionInventoryAdmin(admin.ModelAdmin):
-    list_display = ['product', 'current_quantity', 'updated_quantity', 'update_time']
+    list_display = ['product', 'current_quantity', 'updated_at']
     search_fields = ['product__vehicle_model__name', 'product__color__name']
 
 

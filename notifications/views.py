@@ -5,11 +5,14 @@ from django.http import JsonResponse
 from .models import Notification
 
 
-@login_required
 def inbox_view(request):
     """消息收件箱视图"""
-    user_notifications = Notification.objects.filter(user=request.user).select_related('related_record')
-    unread_count = user_notifications.filter(is_read=False).count()
+    if request.user.is_authenticated:
+        user_notifications = Notification.objects.filter(user=request.user).select_related('related_record')
+        unread_count = user_notifications.filter(is_read=False).count()
+    else:
+        user_notifications = []
+        unread_count = 0
 
     context = {
         'notifications': user_notifications,
