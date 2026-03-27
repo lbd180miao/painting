@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block title %}导入历史 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">导入历史</h3>
+                <div class="btn-list">
+                    <a href="{% url 'data:import_history_export' %}?q={{ filters.q|urlencode }}&type={{ filters.type|urlencode }}&status={{ filters.status|urlencode }}" class="btn btn-outline-secondary btn-sm">导出当前筛选</a>
+                    <a href="{% url 'data:import' %}" class="btn btn-outline-primary btn-sm">返回导入页</a>
+                </div>
+            </div>
+            <div class="card-body border-bottom">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <div class="text-muted small">累计导入次数</div>
+                            <div class="fs-4 fw-bold">{{ summary.total_records }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <div class="text-muted small">累计成功条数</div>
+                            <div class="fs-4 fw-bold">{{ summary.total_success_count }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <div class="text-muted small">累计失败条数</div>
+                            <div class="fs-4 fw-bold">{{ summary.total_error_count }}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="border rounded p-3">
+                            <div class="text-muted small">最近失败</div>
+                            <div class="fw-bold">
+                                {% if summary.latest_failed_at %}
+                                {{ summary.latest_failed_at|date:"Y-m-d H:i" }}
+                                {% else %}
+                                暂无
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body border-bottom">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">关键词</label>
+                        <input type="text" name="q" value="{{ filters.q }}" class="form-control" placeholder="文件名或结果说明">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">导入类型</label>
+                        <select name="type" class="form-select">
+                            <option value="">全部类型</option>
+                            {% for value, label in import_types %}
+                            <option value="{{ value }}"{% if filters.type == value %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">状态</label>
+                        <select name="status" class="form-select">
+                            <option value="">全部状态</option>
+                            {% for value, label in status_choices %}
+                            <option value="{{ value }}"{% if filters.status == value %} selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary w-100">筛选</button>
+                        <a href="{% url 'data:import_history' %}" class="btn btn-light">重置</a>
+                    </div>
+                </form>
+            </div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter">
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>类型</th>
+                            <th>文件名</th>
+                            <th>状态</th>
+                            <th>结果</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in records %}
+                        <tr>
+                            <td>{{ item.created_at|date:"Y-m-d H:i:s" }}</td>
+                            <td>{{ item.get_import_type_display }}</td>
+                            <td>{{ item.file_name }}</td>
+                            <td>{{ item.get_status_display }}</td>
+                            <td>成功 {{ item.success_count }} / 失败 {{ item.error_count }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'data:import_history_detail' item.id %}" class="btn btn-sm btn-outline-secondary">查看详情</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">暂无导入记录</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% include "data/partials/pagination.html" with page_obj=page_obj %}
+        </div>
+    </div>
+</div>
+{% endblock %}

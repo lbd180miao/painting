@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% load color_extras %}
+
+{% block title %}总成拉动数据 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">总成拉动数据</h3>
+                <div class="btn-list">
+                    <a href="{% url 'data:assembly_create' %}?next={{ request.get_full_path|urlencode }}" class="btn btn-primary btn-sm">新增总成拉动</a>
+                    <a href="{% url 'data:assembly_export' %}?q={{ filters.q|urlencode }}&vehicle={{ filters.vehicle|urlencode }}&color={{ filters.color|urlencode }}&import_batch={{ filters.import_batch|urlencode }}" class="btn btn-outline-secondary btn-sm">导出当前筛选</a>
+                    <a href="{% url 'data:import' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-earmark-arrow-up"></i> 导入数据
+                    </a>
+                </div>
+            </div>
+
+            <div class="card-body border-bottom">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">关键词</label>
+                        <input type="text" name="q" value="{{ filters.q }}" class="form-control" placeholder="车型、颜色或批次">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">车型</label>
+                        <select name="vehicle" class="form-select">
+                            <option value="">全部车型</option>
+                            {% for vehicle in vehicles %}
+                            <option value="{{ vehicle.id }}"{% if filters.vehicle == vehicle.id|stringformat:"s" %} selected{% endif %}>{{ vehicle.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">颜色</label>
+                        <select name="color" class="form-select">
+                            <option value="">全部颜色</option>
+                            {% for color in colors %}
+                            <option value="{{ color.id }}"{% if filters.color == color.id|stringformat:"s" %} selected{% endif %}>{{ color.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">导入批次</label>
+                        <input type="text" name="import_batch" value="{{ filters.import_batch }}" class="form-control" placeholder="批次号">
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary w-100">筛选</button>
+                        <a href="{% url 'data:assembly_list' %}" class="btn btn-light">重置</a>
+                    </div>
+                </form>
+            </div>
+
+            <form method="post" action="{% url 'data:assembly_bulk_delete' %}" onsubmit="return confirmBulkDelete(this);">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <div class="card-body border-bottom d-flex justify-content-between align-items-center">
+                <div class="text-muted">已选中后可批量删除当前页记录</div>
+                <button type="submit" class="btn btn-outline-danger btn-sm">批量删除</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter text-nowrap datatable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" data-select-all></th>
+                            <th>序号 (Min)</th>
+                            <th>车型</th>
+                            <th>颜色</th>
+                            <th>计划时间</th>
+                            <th>导入批次</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in assembly_data %}
+                        {% if item.id == next_item_id %}
+                        <tr id="next-production-row" style="background: linear-gradient(90deg,rgba(255,193,7,0.18) 0%,rgba(255,193,7,0.06) 100%); box-shadow: inset 4px 0 0 #ffc107;">
+                        {% else %}
+                        <tr>
+                        {% endif %}
+                            <td><input type="checkbox" name="selected_ids" value="{{ item.id }}"></td>
+                            <td>
+                                {{ item.sequence }}
+                                {% if item.id == next_item_id %}
+                                <span class="badge bg-warning text-dark ms-1" title="下一次计划生产">下一条</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ item.vehicle_model.name }}</td>
+                            <td><span style="{{ item.color|color_chip_style }}">{{ item.color.display_name }}</span></td>
+                            <td>{{ item.planned_time|date:"Y-m-d H:i:s" }}</td>
+                            <td>{{ item.import_batch|default:"-" }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'data:assembly_update' item.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-outline-primary btn-sm">编辑</a>
+                                <a href="{% url 'data:assembly_delete' item.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-outline-danger btn-sm">删除</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">暂无数据</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            </form>
+
+            {% if page_obj and page_obj.paginator.num_pages > 1 %}
+            <div class="card-footer d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <!-- 上一页 / 下一页 -->
+                <div class="text-muted">第 {{ page_obj.number }} / {{ page_obj.paginator.num_pages }} 页，共 {{ page_obj.paginator.count }} 条</div>
+                <div class="d-flex align-items-center gap-2">
+                    <div class="btn-list">
+                        {% if page_obj.has_previous %}
+                        <a href="?page={{ page_obj.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.vehicle %}&vehicle={{ filters.vehicle }}{% endif %}{% if filters.color %}&color={{ filters.color }}{% endif %}{% if filters.import_batch %}&import_batch={{ filters.import_batch }}{% endif %}" class="btn btn-outline-secondary btn-sm">上一页</a>
+                        {% endif %}
+                        {% if page_obj.has_next %}
+                        <a href="?page={{ page_obj.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.vehicle %}&vehicle={{ filters.vehicle }}{% endif %}{% if filters.color %}&color={{ filters.color }}{% endif %}{% if filters.import_batch %}&import_batch={{ filters.import_batch }}{% endif %}" class="btn btn-outline-secondary btn-sm">下一页</a>
+                        {% endif %}
+                    </div>
+
+                    <!-- 直接跳页 -->
+                    <form method="get" class="d-flex align-items-center gap-1" id="page-jump-form">
+                        {% if filters.q %}<input type="hidden" name="q" value="{{ filters.q }}">{% endif %}
+                        {% if filters.vehicle %}<input type="hidden" name="vehicle" value="{{ filters.vehicle }}">{% endif %}
+                        {% if filters.color %}<input type="hidden" name="color" value="{{ filters.color }}">{% endif %}
+                        {% if filters.import_batch %}<input type="hidden" name="import_batch" value="{{ filters.import_batch }}">{% endif %}
+                        <span class="text-muted small">跳至</span>
+                        <input
+                            type="number"
+                            name="page"
+                            min="1"
+                            max="{{ page_obj.paginator.num_pages }}"
+                            placeholder="{{ page_obj.number }}"
+                            class="form-control form-control-sm"
+                            style="width: 70px;"
+                            id="page-jump-input"
+                        >
+                        <span class="text-muted small">页</span>
+                        <button type="submit" class="btn btn-sm btn-primary">GO</button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if next_item_id %}
+<script>
+// 页面加载后滚动到高亮行
+document.addEventListener('DOMContentLoaded', function () {
+    var row = document.getElementById('next-production-row');
+    if (row) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+});
+</script>
+{% endif %}
+
+{% include "data/partials/bulk_actions_script.html" %}
+{% endblock %}

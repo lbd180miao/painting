@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(pip index versions:*)",
+      "Bash(pip search:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)",
+      "Bash(git show:*)",
+      "WebSearch",
+      "Bash(git reset:*)",
+      "Bash(claude plugin --help:*)",
+      "Bash(claude plugin marketplace add:*)",
+      "Bash(git checkout:*)",
+      "Bash(curl:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+
+{% block title %}消息收件箱 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row">
+        <div class="col-md-12">
+            <h2 class="mb-4">消息收件箱</h2>
+
+            {% if messages %}
+                <div class="alert alert-info">
+                    {% for django_message in messages %}
+                        {{ django_message }}
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            {% if notifications %}
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>
+                            共 <strong>{{ notifications|length }}</strong> 条消息
+                            {% if unread_count %}（其中 <strong>{{ unread_count }}</strong> 条未读）{% endif %}
+                        </span>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" onclick="markAllRead()">
+                                全部标记为已读
+                            </button>
+                        </div>
+                    </div>
+                    <div class="list-group list-group-flush">
+                        {% for notification in notifications %}
+                            <div class="list-group-item {% if not notification.is_read %}list-group-item-primary{% endif %}">
+                                <div class="d-flex w-100 justify-content-between align-items-start">
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">
+                                            {% if not notification.is_read %}
+                                                <span class="badge bg-danger">新</span>
+                                            {% endif %}
+                                            {{ notification.title }}
+                                        </h5>
+                                        <p class="mb-1">{{ notification.content|linebreaks }}</p>
+                                        <small class="text-muted">
+                                            <i class="bi bi-clock"></i> {{ notification.created_at|date:"Y-m-d H:i" }}
+                                            {% if notification.related_record %}
+                                                | 关联记录: #{{ notification.related_record.id }}
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    <div class="btn-group-vertical" role="group">
+                                        {% if not notification.is_read %}
+                                            <a href="{% url 'notifications:mark_read' notification.id %}"
+                                               class="btn btn-sm btn-outline-success"
+                                               onclick="markAsRead({{ notification.id }}); return false;">
+                                                标记已读
+                                            </a>
+                                        {% endif %}
+                                        <a href="{% url 'notifications:delete' notification.id %}"
+                                           class="btn btn-sm btn-outline-danger"
+                                           onclick="deleteNotification({{ notification.id }}); return false;">
+                                            删除
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            {% else %}
+                <div class="alert alert-info">
+                    <h4 class="alert-heading">暂无消息</h4>
+                    <p>您目前没有收到任何消息通知。</p>
+                    <hr>
+                    <p class="mb-0">当系统检测到风险或需要通知时，消息将显示在这里。</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function markAsRead(notificationId) {
+    fetch(`/notifications/mark-read/${notificationId}/`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/json',
+            'X-CSRFToken': getCookie('csrftoken')
+        },
+        credentials: 'same-origin'
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            location.reload();
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function deleteNotification(notificationId) {
+    if (confirm('确定要删除这条消息吗？')) {
+        fetch(`/notifications/delete/${notificationId}/`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'Content-Type': 'application/json',
+                'X-CSRFToken': getCookie('csrftoken')
+            },
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            }
+        })
+        .catch(error => console.error('Error:', error));
+    }
+}
+
+function markAllRead() {
+    const unreadItems = document.querySelectorAll('[onclick^="markAsRead"]');
+    unreadItems.forEach((item, index) => {
+        setTimeout(() => {
+            const match = item.getAttribute('onclick').match(/markAsRead\((\d+)\)/);
+            if (match) {
+                markAsRead(match[1]);
+            }
+        }, index * 100);
+    });
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

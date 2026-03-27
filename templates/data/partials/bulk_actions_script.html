@@ -1,0 +1,20 @@
+<script>
+function confirmBulkDelete(form) {
+  const selected = form.querySelectorAll('input[name="selected_ids"]:checked').length;
+  if (!selected) {
+    alert("请先勾选要删除的记录");
+    return false;
+  }
+  return window.confirm("确认删除选中的 " + selected + " 条记录？");
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  const selectAll = document.querySelector("[data-select-all]");
+  if (!selectAll) return;
+  selectAll.addEventListener("change", function () {
+    document.querySelectorAll('input[name="selected_ids"]').forEach(function (checkbox) {
+      checkbox.checked = selectAll.checked;
+    });
+  });
+});
+</script>

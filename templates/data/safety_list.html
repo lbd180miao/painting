@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+{% load color_extras %}
+
+{% block title %}安全库存 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">安全库存设置</h3>
+                <div class="btn-list">
+                    <a href="{% url 'data:safety_create' %}?next={{ request.get_full_path|urlencode }}" class="btn btn-primary btn-sm">新增安全库存</a>
+                    <a href="{% url 'data:safety_export' %}?q={{ filters.q|urlencode }}&vehicle={{ filters.vehicle|urlencode }}&color={{ filters.color|urlencode }}" class="btn btn-outline-secondary btn-sm">导出当前筛选</a>
+                    <a href="{% url 'data:import' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-file-earmark-arrow-up"></i> 导入数据
+                    </a>
+                </div>
+            </div>
+
+            <div class="card-body border-bottom">
+                <form method="get" class="row g-2 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">关键词</label>
+                        <input type="text" name="q" value="{{ filters.q }}" class="form-control" placeholder="车型或颜色">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">车型</label>
+                        <select name="vehicle" class="form-select">
+                            <option value="">全部车型</option>
+                            {% for vehicle in vehicles %}
+                            <option value="{{ vehicle.id }}"{% if filters.vehicle == vehicle.id|stringformat:"s" %} selected{% endif %}>{{ vehicle.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">颜色</label>
+                        <select name="color" class="form-select">
+                            <option value="">全部颜色</option>
+                            {% for color in colors %}
+                            <option value="{{ color.id }}"{% if filters.color == color.id|stringformat:"s" %} selected{% endif %}>{{ color.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-2 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary w-100">筛选</button>
+                        <a href="{% url 'data:safety_list' %}" class="btn btn-light">重置</a>
+                    </div>
+                </form>
+            </div>
+
+            <form method="post" action="{% url 'data:safety_bulk_delete' %}" onsubmit="return confirmBulkDelete(this);">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+            <div class="card-body border-bottom d-flex justify-content-between align-items-center">
+                <div class="text-muted">已选中后可批量删除当前页记录</div>
+                <button type="submit" class="btn btn-outline-danger btn-sm">批量删除</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter text-nowrap datatable">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" data-select-all></th>
+                            <th>车型</th>
+                            <th>颜色</th>
+                            <th>位置</th>
+                            <th>安全库存数量</th>
+                            <th class="text-end">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stock in safety_stocks %}
+                        <tr>
+                            <td><input type="checkbox" name="selected_ids" value="{{ stock.id }}"></td>
+                            <td>{{ stock.product.vehicle_model.name }}</td>
+                            <td><span style="{{ stock.product.color|color_chip_style }}">{{ stock.product.color.display_name }}</span></td>
+                            <td>{{ stock.product.position_type.get_name_display }}</td>
+                            <td>{{ stock.quantity }}</td>
+                            <td class="text-end">
+                                <a href="{% url 'data:safety_update' stock.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-outline-primary btn-sm">编辑</a>
+                                <a href="{% url 'data:safety_delete' stock.id %}?next={{ request.get_full_path|urlencode }}" class="btn btn-outline-danger btn-sm">删除</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">暂无数据</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            </form>
+            {% include "data/partials/pagination.html" %}
+        </div>
+    </div>
+</div>
+{% include "data/partials/bulk_actions_script.html" %}
+{% endblock %}

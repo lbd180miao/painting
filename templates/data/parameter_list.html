@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+
+{% block title %}系统参数 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">系统参数配置</h3>
+            </div>
+
+<div class="table-responsive">
+    <table class="table card-table table-vcenter text-nowrap datatable">
+        <thead>
+            <tr>
+                <th>参数键名</th>
+                <th>参数名称</th>
+                <th>参数值</th>
+                <th>描述</th>
+                <th>最近更新</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in parameters %}
+            <tr>
+                <td><code>{{ item.param_key }}</code></td>
+                <td>{{ item.get_param_key_display }}</td>
+                <td>{{ item.param_value }}</td>
+                <td>{{ item.description|default:'-' }}</td>
+                <td>{{ item.updated_at|date:"Y-m-d H:i:s" }}</td>
+                <td><a href="{% url 'data:parameter_update' item.id %}" class="btn btn-sm btn-outline-primary">编辑</a></td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="6" class="text-center text-muted py-4">暂无数据</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

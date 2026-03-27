@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% load color_extras %}
+
+{% block title %}产品列表 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">产品列表</h3>
+                <div class="card-actions">
+                    <a href="{% url 'data:product_create' %}" class="btn btn-primary btn-sm">新增产品</a>
+                </div>
+            </div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter text-nowrap datatable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>车型</th>
+                            <th>颜色</th>
+                            <th>位置</th>
+                            <th>单车挂具数量</th>
+                            <th>良品率</th>
+                            <th>启用</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in products %}
+                        <tr>
+                            <td>{{ item.id }}</td>
+                            <td>{{ item.vehicle_model.name }}</td>
+                            <td><span style="{{ item.color|color_chip_style }}">{{ item.color.display_name }}</span></td>
+                            <td>{{ item.position_type.name }}</td>
+                            <td>{{ item.hanging_count_per_vehicle }}</td>
+                            <td>{{ item.yield_rate }}%</td>
+                            <td>{% if item.is_active %}是{% else %}否{% endif %}</td>
+                            <td>
+                                <a href="{% url 'data:product_update' item.id %}" class="btn btn-sm btn-outline-primary">编辑</a>
+                                <a href="{% url 'data:product_delete' item.id %}" class="btn btn-sm btn-outline-danger">删除</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted py-4">暂无数据</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

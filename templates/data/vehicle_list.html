@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load django_bootstrap5 %}
+
+{% block title %}车型列表 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">车型列表</h3>
+                <div class="card-actions">
+                    <a href="{% url 'data:vehicle_create' %}" class="btn btn-primary btn-sm">新增车型</a>
+                </div>
+            </div>
+
+<div class="table-responsive">
+    <table class="table card-table table-vcenter text-nowrap datatable">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>名称</th>
+                <th>创建时间</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in vehicles %}
+            <tr>
+                <td>{{ item.id }}</td>
+                <td>{{ item.name }}</td>
+                <td>{{ item.created_at|date:"Y-m-d H:i:s" }}</td>
+                <td>
+                    <a href="{% url 'data:vehicle_update' item.id %}" class="btn btn-sm btn-outline-primary">编辑</a>
+                    <a href="{% url 'data:vehicle_delete' item.id %}" class="btn btn-sm btn-outline-danger">删除</a>
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="4" class="text-center text-muted py-4">暂无数据</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

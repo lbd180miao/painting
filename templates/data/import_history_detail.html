@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block title %}导入记录详情 - 涂装生产排程管理系统{% endblock %}
+
+{% block content %}
+<div class="row row-cards">
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h3 class="card-title mb-0">导入记录详情</h3>
+                <a href="{% url 'data:import_history' %}" class="btn btn-sm btn-outline-secondary">返回历史</a>
+            </div>
+            <div class="card-body">
+                <dl class="row mb-0">
+                    <dt class="col-sm-4">类型</dt>
+                    <dd class="col-sm-8">{{ record.get_import_type_display }}</dd>
+                    <dt class="col-sm-4">文件名</dt>
+                    <dd class="col-sm-8">{{ record.file_name }}</dd>
+                    <dt class="col-sm-4">状态</dt>
+                    <dd class="col-sm-8">{{ record.get_status_display }}</dd>
+                    <dt class="col-sm-4">时间</dt>
+                    <dd class="col-sm-8">{{ record.created_at|date:"Y-m-d H:i:s" }}</dd>
+                    <dt class="col-sm-4">结果说明</dt>
+                    <dd class="col-sm-8">{{ record.message }}</dd>
+                    <dt class="col-sm-4">成功条数</dt>
+                    <dd class="col-sm-8">{{ record.success_count }}</dd>
+                    <dt class="col-sm-4">失败条数</dt>
+                    <dd class="col-sm-8">{{ record.error_count }}</dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title mb-0">错误明细</h3>
+            </div>
+            <div class="table-responsive">
+                <table class="table card-table table-vcenter">
+                    <thead>
+                        <tr>
+                            <th>位置</th>
+                            <th>原因</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for error in record.error_details %}
+                        <tr>
+                            <td>{{ error.row }}</td>
+                            <td>{{ error.reason }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-center text-muted py-4">本次导入没有错误明细</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
