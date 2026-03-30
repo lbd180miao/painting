@@ -242,12 +242,14 @@ class SchedulingAlgorithm:
             key = self._get_product_key(product)
             current_stock = self.inventory_data.get(key, {}).get("current", 0)
             safety_stock = self.safety_stock_data.get(key, 0)
-            final_value = current_stock - item["production_quantity"]
+            final_value = current_stock - item["demand_quantity"]
+            risk_value = safety_stock - final_value
             risks.append(
                 {
                     "product": product,
                     "final_value": final_value,
                     "safety_stock": safety_stock,
+                    "risk_value": risk_value,
                     "is_shortage": final_value < 0,
                 }
             )
@@ -266,7 +268,7 @@ class SchedulingAlgorithm:
             key = self._get_product_key(product)
             current_stock = self.inventory_data.get(key, {}).get("current", 0)
             safety_stock = self.safety_stock_data.get(key, 0)
-            final_value = current_stock - item["production_quantity"]
+            final_value = current_stock - item["demand_quantity"]
             risk_value = safety_stock - final_value
             risk = {
                 "product": product,
@@ -306,42 +308,65 @@ class SchedulingAlgorithm:
         remaining_injection_inventory = remaining_injection_inventory or self._build_remaining_injection_inventory()
         plans = []
 
-        for risk in short_risks:
-            if risk["final_value"] >= 0:
-                continue
-            product = risk["product"]
-            needed_vehicles = math.ceil(abs(risk["final_value"]) / product.hanging_count_per_vehicle)
-            product_key = self._get_product_key(product)
-            available_pieces = max(remaining_injection_inventory.get(product_key, 0), 0)
-            available_vehicles = available_pieces // product.hanging_count_per_vehicle
-            allocated = min(needed_vehicles, remaining_vehicles, available_vehicles)
-            note_parts = [f"短期止血，终值 {risk['final_value']}"]
-            if available_vehicles < needed_vehicles:
-                note_parts.append("受注塑库存限制")
-            if remaining_vehicles < needed_vehicles:
-                note_parts.append("受短期产能限制")
-            note_parts = list(dict.fromkeys(note_parts))
-            if allocated <= 0:
+        urgent_risks = [r for r in short_risks if r["final_value"] < 0]
+        urgent_risks.sort(key=lambda x: x["final_value"])
+
+        preventive_risks = [r for r in short_risks if r["final_value"] >= 0 and r["risk_value"] > 0]
+        preventive_risks.sort(key=lambda x: x["risk_value"], reverse=True)
+
+        for priority, risk_group in [("第一优先级（急需）", urgent_risks), ("第二优先级（预防）", preventive_risks)]:
+            for risk in risk_group:
+                if remaining_vehicles <= 0:
+                    break
+
+                product = risk["product"]
+                if priority == "第一优先级（急需）":
+                    needed_pieces = abs(risk["final_value"])
+                else:
+                    needed_pieces = risk["risk_value"]
+
+                production_qty = math.ceil(needed_pieces / (float(product.yield_rate) / 100.0))
+                needed_vehicles = math.ceil(production_qty / product.hanging_count_per_vehicle)
+
+                if needed_vehicles <= 0:
+                    continue
+
+                product_key = self._get_product_key(product)
+                available_pieces = max(remaining_injection_inventory.get(product_key, 0), 0)
+                available_vehicles = available_pieces // product.hanging_count_per_vehicle
+
+                allocated = min(needed_vehicles, remaining_vehicles, available_vehicles)
+                note_parts = [f"{priority}，终值 {risk['final_value']}，风险 {risk['risk_value']}"]
+
+                if available_vehicles < needed_vehicles:
+                    note_parts.append("受注塑库存限制")
+                if remaining_vehicles < needed_vehicles:
+                    note_parts.append("受短期产能限制截止")
+
+                note_parts = list(dict.fromkeys(note_parts))
+
+                if allocated <= 0:
+                    plans.append(
+                        {
+                            "product": product,
+                            "vehicle_count": 0,
+                            "note": "，".join(note_parts),
+                        }
+                    )
+                    continue
+
                 plans.append(
                     {
                         "product": product,
-                        "vehicle_count": 0,
+                        "vehicle_count": allocated,
                         "note": "，".join(note_parts),
                     }
                 )
-                continue
-            plans.append(
-                {
-                    "product": product,
-                    "vehicle_count": allocated,
-                    "note": "，".join(note_parts),
-                }
-            )
-            remaining_vehicles -= allocated
-            remaining_injection_inventory[product_key] = max(
-                available_pieces - allocated * product.hanging_count_per_vehicle,
-                0,
-            )
+                remaining_vehicles -= allocated
+                remaining_injection_inventory[product_key] = max(
+                    available_pieces - allocated * product.hanging_count_per_vehicle,
+                    0,
+                )
 
         return plans
 
@@ -356,157 +381,122 @@ class SchedulingAlgorithm:
         group_capacity_limit = math.ceil(
             total_vehicles * self.params.get("GROUP_CAPACITY_LIMIT", 0) / 100
         )
-        balance_limit = int(self.params.get("FRONT_REAR_BALANCE_D", 0))
+        if group_capacity_limit <= 0:
+            group_capacity_limit = math.ceil(self.params["TOTAL_VEHICLES"] * 40 / 100) # Fallback 40%
+
+        balance_limit = int(self.params.get("FRONT_REAR_BALANCE_D", 15))
         remaining_injection_inventory = remaining_injection_inventory or self._build_remaining_injection_inventory()
         grouped_risks = self._group_long_risks(long_risks)
 
         plan_map = {}
-        front_count = 0
-        rear_count = 0
         used_vehicles = 0
-        model_usage: Dict[str, int] = defaultdict(int)
+        risk_lookup = {r["product"].id: r.get("risk_value", 0) for r in long_risks}
 
+        def get_raw_needs(risk_obj):
+            if not risk_obj or risk_obj.get("risk_value", 0) <= 0: return 0
+            prod_qty = math.ceil(risk_obj["risk_value"] / (float(risk_obj["product"].yield_rate)/100))
+            return math.ceil(prod_qty / risk_obj["product"].hanging_count_per_vehicle)
+
+        # 规则 1, 4, 3
         for group in grouped_risks:
-            primary_position = self._get_primary_position(group["positions"])
-
-            # 产能已满：标注所有有风险的 position 并跳过
             if used_vehicles >= total_vehicles:
-                self._annotate_group_capacity_shortage(
-                    plan_map=plan_map,
-                    group=group,
-                    primary_position=primary_position,
-                )
-                continue
+                break
 
-            # 计算每个 position 的需求车数（批量，不逐车循环）
-            needs: Dict[str, int] = {}
-            for position, risk in group["positions"].items():
-                if not risk or risk.get("risk_value", 0) <= 0:
-                    needs[position] = 0
-                else:
-                    needed_pieces = max(risk["risk_value"], 0)
-                    needs[position] = math.ceil(
-                        needed_pieces / risk["product"].hanging_count_per_vehicle
-                    )
+            front_risk_obj = group["positions"].get(self.POSITION_FRONT)
+            rear_risk_obj = group["positions"].get(self.POSITION_REAR)
 
-            group_limit_hit = False
-            balance_blocked = False
-            injection_blocked = False
+            front_risk_val = front_risk_obj["risk_value"] if front_risk_obj else 0
+            rear_risk_val = rear_risk_obj["risk_value"] if rear_risk_obj else 0
 
-            # 按风险从大到小排序 position，先补高风险侧
-            ordered_positions = sorted(
-                self.POSITION_TYPES,
-                key=lambda pos: (
-                    group["positions"].get(pos, {}).get("risk_value", 0),
-                    1 if pos == self.POSITION_REAR else 0,
-                ),
-                reverse=True,
-            )
+            # 规则 1：确定高风险侧
+            if rear_risk_val > front_risk_val:
+                high_pos, low_pos = self.POSITION_REAR, self.POSITION_FRONT
+                high_risk_obj, low_risk_obj = rear_risk_obj, front_risk_obj
+            else:
+                high_pos, low_pos = self.POSITION_FRONT, self.POSITION_REAR
+                high_risk_obj, low_risk_obj = front_risk_obj, rear_risk_obj
 
-            for position in ordered_positions:
-                if needs.get(position, 0) <= 0:
-                    continue
-                risk = group["positions"].get(position)
-                if not risk:
-                    continue
+            high_risk_val = max(rear_risk_val, front_risk_val)
+            low_risk_val = min(rear_risk_val, front_risk_val)
 
-                product = risk["product"]
-                model_name = product.vehicle_model.name
-                product_key = self._get_product_key(product)
-                requested = needs[position]
+            balance_cars = 0
+            if high_risk_obj and high_risk_val - low_risk_val > 20:
+                per_car_reduction = high_risk_obj["product"].hanging_count_per_vehicle * (float(high_risk_obj["product"].yield_rate)/100)
+                balance_cars = math.ceil((high_risk_val - low_risk_val - 20) / per_car_reduction)
 
-                # ── 约束1：注塑库存上限 ──
-                available_pieces = max(remaining_injection_inventory.get(product_key, 0), 0)
-                available_by_injection = available_pieces // product.hanging_count_per_vehicle
-                if available_by_injection <= 0:
-                    # 确保 plan_map 中有这个 entry（0车）便于后续注释
-                    self._ensure_long_plan_entry(plan_map, product, group["group_risk_value"], primary_position)
-                    injection_blocked = True
-                    continue
+            high_total_needs = get_raw_needs(high_risk_obj)
+            low_total_needs = get_raw_needs(low_risk_obj)
 
-                # ── 约束2：车型组产能上限 ──
-                model_remain = (
-                    max(group_capacity_limit - model_usage[model_name], 0)
-                    if group_capacity_limit > 0
-                    else requested
-                )
-                if model_remain <= 0:
-                    group_limit_hit = True
-                    # 同样确保 entry 存在
-                    self._ensure_long_plan_entry(plan_map, product, group["group_risk_value"], primary_position)
+            intent_high = high_total_needs
+            intent_low = low_total_needs
+
+            # 规则 4：组内容量限制
+            if intent_high + intent_low > group_capacity_limit:
+                total_risk = high_risk_val + low_risk_val
+                ratio_high = high_risk_val / total_risk if total_risk > 0 else 0.5
+                intent_high = math.floor(group_capacity_limit * ratio_high)
+                intent_low = group_capacity_limit - intent_high
+
+            alloc_sequence = []
+            if balance_cars > 0:
+                high_first = min(balance_cars, intent_high)
+                if high_first > 0:
+                    alloc_sequence.append((high_pos, high_risk_obj, high_first, "组内平衡"))
+                intent_high -= high_first
+            
+            if intent_high > 0:
+                alloc_sequence.append((high_pos, high_risk_obj, intent_high, "按需补库"))
+            if intent_low > 0:
+                alloc_sequence.append((low_pos, low_risk_obj, intent_low, "按需补库"))
+
+            # 规则 3：执行分配，受外部总产能限制 & 注塑库存限制
+            for pos, risk_obj, req_cars, rule_note in alloc_sequence:
+                if used_vehicles >= total_vehicles:
+                    break
+                req_cars = min(req_cars, total_vehicles - used_vehicles)
+                if req_cars <= 0:
                     continue
 
-                # ── 约束3：前后平衡约束 ──
-                # 计算在平衡约束下，本 position 最多能分配多少辆
-                if position == self.POSITION_FRONT:
-                    # 分配 k 辆后：|front_count+k - rear_count| <= balance_limit
-                    # => front_count+k <= rear_count + balance_limit
-                    max_by_balance = max(rear_count + balance_limit - front_count, 0)
-                else:
-                    max_by_balance = max(front_count + balance_limit - rear_count, 0)
+                product_key = self._get_product_key(risk_obj["product"])
+                avail_pieces = max(remaining_injection_inventory.get(product_key, 0), 0)
+                avail_cars = avail_pieces // risk_obj["product"].hanging_count_per_vehicle
 
-                if max_by_balance <= 0:
-                    balance_blocked = True
-                    self._ensure_long_plan_entry(plan_map, product, group["group_risk_value"], primary_position)
-                    continue
+                allocated = min(req_cars, avail_cars)
 
-                # ── 约束4：总产能剩余 ──
-                capacity_remain = total_vehicles - used_vehicles
+                plan_item = self._ensure_long_plan_entry(plan_map, risk_obj["product"], group["group_risk_value"], high_pos)
+                if allocated > 0:
+                    plan_item["vehicle_count"] += allocated
+                    used_vehicles += allocated
+                    remaining_injection_inventory[product_key] -= allocated * risk_obj["product"].hanging_count_per_vehicle
 
-                # 批量确定本次实际分配车数（取所有约束的最小值）
-                allocated = min(
-                    requested,
-                    available_by_injection,
-                    model_remain,
-                    max_by_balance,
-                    capacity_remain,
-                )
+                if allocated < req_cars:
+                    if avail_cars < req_cars and "受注塑库存限制" not in plan_item["note_parts"]:
+                        plan_item["note_parts"].append("受注塑库存限制")
 
-                if allocated <= 0:
-                    continue
+        # 规则 2：整体前后平衡裁剪
+        front_total = sum(p["vehicle_count"] for p in plan_map.values() if p["product"].position_type.name == self.POSITION_FRONT)
+        rear_total = sum(p["vehicle_count"] for p in plan_map.values() if p["product"].position_type.name == self.POSITION_REAR)
 
-                # 执行分配
-                plan_item = self._ensure_long_plan_entry(
-                    plan_map, product, group["group_risk_value"], primary_position
-                )
-                plan_item["vehicle_count"] += allocated
-                used_vehicles += allocated
-                model_usage[model_name] += allocated
-                remaining_injection_inventory[product_key] = max(
-                    available_pieces - allocated * product.hanging_count_per_vehicle, 0
-                )
-                if position == self.POSITION_FRONT:
-                    front_count += allocated
-                else:
-                    rear_count += allocated
+        if abs(front_total - rear_total) > balance_limit:
+            trim_side = self.POSITION_FRONT if front_total > rear_total else self.POSITION_REAR
+            excess = abs(front_total - rear_total) - balance_limit
 
-                # 若分配量小于需求，标注是哪个约束截断了
-                if allocated < requested:
-                    if available_by_injection < requested:
-                        injection_blocked = True
-                    if group_capacity_limit > 0 and model_usage[model_name] >= group_capacity_limit:
-                        group_limit_hit = True
-                    if allocated == max_by_balance:
-                        balance_blocked = True
-                    if used_vehicles >= total_vehicles:
-                        pass  # capacity shortage handled below
+            trim_candidates = [
+                p for p in plan_map.values()
+                if p["product"].position_type.name == trim_side and p["vehicle_count"] > 0
+            ]
+            
+            # 按风险值从小到大排序，优先砍低风险
+            trim_candidates.sort(key=lambda x: risk_lookup.get(x["product"].id, -9999))
 
-            # 产能满了但还有剩余需求 → 标注产能不足
-            if used_vehicles >= total_vehicles and any(needs.values()):
-                self._annotate_group_capacity_shortage(
-                    plan_map=plan_map,
-                    group=group,
-                    primary_position=primary_position,
-                )
-
-            if group_limit_hit or balance_blocked or injection_blocked:
-                self._annotate_group_plan_notes(
-                    plan_map=plan_map,
-                    group=group,
-                    group_limit_hit=group_limit_hit,
-                    balance_blocked=balance_blocked,
-                    injection_blocked=injection_blocked,
-                )
+            for item in trim_candidates:
+                if excess <= 0:
+                    break
+                cut = min(item["vehicle_count"], excess)
+                item["vehicle_count"] -= cut
+                excess -= cut
+                if "受全局前后约束削减" not in item["note_parts"]:
+                    item["note_parts"].append("受全局前后约束削减")
 
         plans = [
             {
@@ -514,7 +504,7 @@ class SchedulingAlgorithm:
                 "vehicle_count": item["vehicle_count"],
                 "note": "，".join(item["note_parts"]),
             }
-            for item in plan_map.values()
+            for item in plan_map.values() if item["vehicle_count"] > 0
         ]
         return plans
 
@@ -643,6 +633,36 @@ class SchedulingAlgorithm:
             )
             used_slot_numbers.add(previous_slot.slot_number)
 
+        # 2. 车型和前/后类型相同的替换（颜色不同但属于同一组）
+        for previous_slot in self.previous_formation_slots:
+            if previous_slot.slot_number > total_slots or previous_slot.product_id is None:
+                continue
+            if previous_slot.slot_number in used_slot_numbers:
+                continue
+            match_index = next(
+                (
+                    index
+                    for index, candidate in enumerate(pending_slots)
+                    if (
+                        candidate["product"].vehicle_model_id == previous_slot.product.vehicle_model_id
+                        and candidate["product"].position_type_id == previous_slot.product.position_type_id
+                    )
+                ),
+                None,
+            )
+            if match_index is not None:
+                candidate = pending_slots.pop(match_index)
+                formation.append(
+                    {
+                        "slot_number": previous_slot.slot_number,
+                        "product": candidate["product"],
+                        "plan_type": candidate["plan_type"],
+                        "is_reused": True,
+                    }
+                )
+                used_slot_numbers.add(previous_slot.slot_number)
+
+        # 3. 剩余车辆按顺位填充空位
         next_slot = 1
         for candidate in pending_slots:
             while next_slot in used_slot_numbers:
@@ -761,13 +781,10 @@ class SchedulingAlgorithm:
 
         updates = {"paint": {}, "injection": {}}
 
-        all_paint_keys = set(self.inventory_data.keys()) | set(demand_by_product.keys()) | set(good_output_by_product.keys())
+        all_paint_keys = set(self.inventory_data.keys()) | set(good_output_by_product.keys())
         for key in all_paint_keys:
             current_quantity = self.inventory_data.get(key, {}).get("current", 0)
-            updated_quantity = max(
-                current_quantity - demand_by_product.get(key, 0) + good_output_by_product.get(key, 0),
-                0,
-            )
+            updated_quantity = current_quantity + good_output_by_product.get(key, 0)
             updates["paint"][key] = {
                 "product": self.inventory_data.get(key, {}).get("product") or self._get_product_by_key(key),
                 "current": current_quantity,
