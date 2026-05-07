@@ -3,7 +3,10 @@
     "allow": [
       "Bash(source:*)",
       "Bash(.venv/Scripts/pip install:*)",
-      "Bash(.venv/Scripts/python.exe:*)"
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(dir d:\\\\workspace2\\\\painting)",
+      "Bash(git check-ignore *)",
+      "Bash(findstr /i \"pycache pyc\")"
     ]
   }
 }
