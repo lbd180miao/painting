@@ -1,4 +1,5 @@
 node_modules
+.worktrees/
 
 # Python
 __pycache__/
