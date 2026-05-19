@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.test import override_settings
 from django.utils import timezone
+from datetime import timedelta
 from io import BytesIO
 from unittest.mock import patch
 
@@ -1235,6 +1236,166 @@ class SchedulingRuleAlignmentTests(TestCase):
             gap_headers,
             ["阶段", "车型", "颜色", "位置", "需要车数", "实际分配", "缺口车数", "未满足需求", "原因"],
         )
+
+    def test_plan_score_full_when_no_gap(self):
+        from schedule.utils import build_plan_score
+
+        self.create_product(
+            self.a0,
+            self.red,
+            self.front,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=0,
+            injection_inventory=20,
+            safety_stock=5,
+        )
+        self.create_product(
+            self.a0,
+            self.red,
+            self.rear,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=0,
+            injection_inventory=20,
+            safety_stock=5,
+        )
+        self.add_pull(1, self.a0, self.red)
+
+        algorithm = SchedulingAlgorithm(short_term_duration=1, long_term_duration=0)
+        results = algorithm.calculate()
+        record = self.create_record()
+        algorithm.save_results(results, record)
+        record.status = "completed"
+        record.save(update_fields=["status"])
+
+        score = build_plan_score(record)
+        self.assertEqual(score['total'], 100.0)
+        self.assertEqual(score['grade_letter'], 'A')
+        self.assertEqual(score['total_gap_vehicles'], 0)
+
+    def test_plan_score_drops_with_short_term_capacity_gap(self):
+        from schedule.utils import build_plan_score
+
+        SystemParameter.objects.filter(param_key="SHORT_TERM_CAPACITY").update(param_value="10")
+        for vm, color in [(self.a0, self.red), (self.a0, self.blue)]:
+            for pos in (self.front, self.rear):
+                self.create_product(
+                    vm, color, pos,
+                    inventory=0,
+                    injection_inventory=10,
+                    safety_stock=0,
+                )
+        self.add_pull(1, self.a0, self.red)
+        self.add_pull(2, self.a0, self.blue)
+
+        algorithm = SchedulingAlgorithm(short_term_duration=2, long_term_duration=0)
+        results = algorithm.calculate()
+        record = self.create_record()
+        algorithm.save_results(results, record)
+        record.status = "completed"
+        record.save(update_fields=["status"])
+
+        score = build_plan_score(record)
+        self.assertLess(score['total'], 100.0)
+        self.assertGreater(score['short_gap_vehicles'], 0)
+        inventory_dim = next(d for d in score['breakdown'] if d['key'] == 'inventory_guarantee')
+        constraint_dim = next(d for d in score['breakdown'] if d['key'] == 'constraint_gap')
+        self.assertLess(inventory_dim['ratio'], 1.0)
+        self.assertLess(constraint_dim['ratio'], 1.0)
+
+    def test_plan_score_prioritizes_formation_when_inventory_has_no_gap(self):
+        from schedule.utils import build_plan_score
+
+        stable_product = self.create_product(
+            self.a0,
+            self.red,
+            self.front,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=20,
+            injection_inventory=20,
+            safety_stock=0,
+        )
+        changed_product = self.create_product(
+            self.a1,
+            self.blue,
+            self.rear,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=20,
+            injection_inventory=20,
+            safety_stock=0,
+        )
+        previous = self.create_record()
+        previous.record_time = timezone.now() - timedelta(minutes=10)
+        previous.status = "completed"
+        previous.save(update_fields=["record_time", "status"])
+        for slot_number in range(1, 11):
+            FormationSlot.objects.create(
+                record=previous,
+                slot_number=slot_number,
+                product=stable_product,
+                plan_type="long",
+                is_reused=True,
+            )
+
+        current = self.create_record()
+        current.record_time = timezone.now()
+        current.status = "completed"
+        current.save(update_fields=["record_time", "status"])
+        for slot_number in range(1, 11):
+            FormationSlot.objects.create(
+                record=current,
+                slot_number=slot_number,
+                product=stable_product if slot_number <= 2 else changed_product,
+                plan_type="long",
+                is_reused=slot_number <= 2,
+            )
+
+        score = build_plan_score(current)
+        breakdown = {item['key']: item for item in score['breakdown']}
+
+        self.assertEqual(score['total_gap_vehicles'], 0)
+        self.assertEqual(breakdown['inventory_guarantee']['score'], 100.0)
+        self.assertEqual(breakdown['formation_stability']['score'], 20.0)
+        self.assertEqual(score['total'], 52.0)
+
+    def test_result_page_shows_plan_score_card(self):
+        self.create_product(
+            self.a0,
+            self.red,
+            self.front,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=0,
+            injection_inventory=20,
+            safety_stock=5,
+        )
+        self.create_product(
+            self.a0,
+            self.red,
+            self.rear,
+            hanging_count=1,
+            yield_rate=100,
+            inventory=0,
+            injection_inventory=20,
+            safety_stock=5,
+        )
+        self.add_pull(1, self.a0, self.red)
+        algorithm = SchedulingAlgorithm(short_term_duration=1, long_term_duration=0)
+        results = algorithm.calculate()
+        record = self.create_record()
+        algorithm.save_results(results, record)
+        record.status = "completed"
+        record.save(update_fields=["status"])
+
+        response = self.client.get(f"/schedule/result/{record.id}/")
+
+        self.assertContains(response, "排产计划评分")
+        self.assertContains(response, "阵型保持")
+        self.assertContains(response, "库存保障")
+        self.assertContains(response, "约束缺口")
 
 
 class MigrationGuardTests(TestCase):

@@ -18,24 +18,26 @@ from django.utils import timezone
 # 1. 静态数据（直接从 Excel 提取，格式验证正确）
 # ============================================================
 
-# 涂装库存 (当前库存, 安全库存) - 来自 3.2涂装库存.xlsx
+# 涂装库存 (当前库存, 安全库存) - 收紧到工厂真实水位
+# 设计意图：current 设在 safety 附近 (±5)，让每次排产都能触发不同的生产组合，
+# 避免库存过度充足导致连续排产计划无变化。
 INVENTORY_DATA = {
     # 物料名           当前库存  安全库存
-    'A0front red':   (80,   30),
-    'A0rear red':    (40,   30),
-    'A0front white': (50,   20),
-    'A0rear white':  (20,   20),
-    'A0front blue':  (40,   15),
-    'A0rear blue':   (18,   15),
-    'A0front black': (25,   10),
-    'A0rear black':  (10,   10),
-    'A1front red':   (60,   25),
-    'A1rear red':    (25,   25),
-    'A1front blue':  (70,   25),
-    'A1rear blue':   (35,   25),
-    'A1front white': (40,   20),
+    'A0front red':   (35,   30),
+    'A0rear red':    (28,   30),
+    'A0front white': (22,   20),
+    'A0rear white':  (18,   20),
+    'A0front blue':  (18,   15),
+    'A0rear blue':   (12,   15),
+    'A0front black': (12,   10),
+    'A0rear black':  ( 7,   10),
+    'A1front red':   (28,   25),
+    'A1rear red':    (20,   25),
+    'A1front blue':  (30,   25),
+    'A1rear blue':   (22,   25),
+    'A1front white': (22,   20),
     'A1rear white':  (15,   20),
-    'A1front black': (20,   10),
+    'A1front black': (12,   10),
     'A1rear black':  ( 8,   10),
 }
 

@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Q, Sum, Prefetch
 from .models import ScheduleRecord, DemandRecord, RiskRecord, SchedulePlan, FormationSlot, InventorySnapshot
 from .services.algorithms import SchedulingAlgorithm
-from .utils import build_injection_constraint_metrics, build_plan_gap_metrics
+from .utils import build_injection_constraint_metrics, build_plan_gap_metrics, build_plan_score
 from data.models import SystemParameter, Inventory, InjectionInventory, SafetyStock, AssemblyPullData
 
 
@@ -262,6 +262,7 @@ def result_view(request, id):
     empty_slot_count = sum(1 for slot in full_formation_slots if (getattr(slot, 'product', None) is None if not isinstance(slot, dict) else slot.get('product') is None))
     injection_constraint_metrics = build_injection_constraint_metrics(record)
     plan_gap_metrics = build_plan_gap_metrics(record)
+    plan_score = build_plan_score(record)
 
     context = {
         'record': record,
@@ -296,6 +297,7 @@ def result_view(request, id):
         'plan_gap_count': plan_gap_metrics['count'],
         'plan_gap_vehicle_loss': plan_gap_metrics['gap_vehicles'],
         'plan_gap_items': plan_gap_metrics['items'],
+        'plan_score': plan_score,
         'paint_inventory_snapshots': paint_inventory_snapshots,
         'injection_inventory_snapshots': injection_inventory_snapshots,
         'short_window': {

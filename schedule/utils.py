@@ -216,6 +216,203 @@ def build_plan_gap_metrics(record, prefetched_risks=None, prefetched_plans=None)
     }
 
 
+# ===== 排产计划评分 =====
+# 总分 100：阵型保持 60% + 库存保障 25% + 约束缺口 15%
+# 等级：>=90 优 (A) / >=75 良 (B) / >=60 中 (C) / <60 差 (D)
+PLAN_SCORE_WEIGHTS = {
+    'formation_stability': 0.6,
+    'inventory_guarantee': 0.25,
+    'constraint_gap': 0.15,
+}
+
+
+def _score_grade(score):
+    if score >= 90:
+        return ('A', '优', 'success')
+    if score >= 75:
+        return ('B', '良', 'primary')
+    if score >= 60:
+        return ('C', '中', 'warning')
+    return ('D', '差', 'danger')
+
+
+def _get_previous_completed_record(record):
+    if not record.record_time:
+        return None
+    return (
+        ScheduleRecord.objects.filter(
+            status='completed',
+            record_time__lt=record.record_time,
+        )
+        .exclude(id=record.id)
+        .order_by('-record_time', '-id')
+        .first()
+    )
+
+
+def _build_formation_stability_score(record):
+    current_slots = list(
+        FormationSlot.objects.filter(record=record)
+        .select_related('product__vehicle_model', 'product__position_type')
+        .order_by('slot_number')
+    )
+    total_slots = max(
+        record.total_vehicles_in_line or record.total_vehicles or len(current_slots) or 1,
+        1,
+    )
+    if not current_slots:
+        return {
+            'ratio': 1.0,
+            'detail': '未生成阵型槽位，按无历史阵型处理',
+            'hint': '无阵型可比较，权重 60%',
+        }
+
+    previous_record = _get_previous_completed_record(record)
+    if not previous_record:
+        return {
+            'ratio': 1.0,
+            'detail': f"首次阵型 {len(current_slots)} / {total_slots} 槽位，不扣阵型分",
+            'hint': '无上一轮阵型，权重 60%',
+        }
+
+    previous_slots = list(
+        FormationSlot.objects.filter(record=previous_record)
+        .select_related('product__vehicle_model', 'product__position_type')
+    )
+    if not previous_slots:
+        return {
+            'ratio': 1.0,
+            'detail': f"上一轮无可比较阵型，本轮 {len(current_slots)} / {total_slots} 槽位",
+            'hint': '上一轮阵型为空，权重 60%',
+        }
+
+    current_map = {slot.slot_number: slot for slot in current_slots}
+    previous_map = {slot.slot_number: slot for slot in previous_slots}
+    exact_count = 0
+    compatible_count = 0
+    new_count = 0
+    changed_count = 0
+    empty_count = 0
+    stability_points = 0.0
+
+    for slot_number in range(1, total_slots + 1):
+        current = current_map.get(slot_number)
+        previous = previous_map.get(slot_number)
+        if not current or not current.product_id:
+            empty_count += 1
+            continue
+        if previous and previous.product_id == current.product_id:
+            exact_count += 1
+            stability_points += 1.0
+            continue
+        if (
+            previous
+            and previous.product_id
+            and previous.product.vehicle_model_id == current.product.vehicle_model_id
+            and previous.product.position_type_id == current.product.position_type_id
+        ):
+            compatible_count += 1
+            stability_points += 0.7
+            continue
+        if previous and previous.product_id:
+            changed_count += 1
+        else:
+            new_count += 1
+            stability_points += 0.5
+
+    ratio = max(0.0, min(1.0, stability_points / total_slots))
+    detail = (
+        f"完全复用 {exact_count} 槽，同车型同位置 {compatible_count} 槽，"
+        f"改槽 {changed_count} 槽，空槽 {empty_count} 槽"
+    )
+    if new_count:
+        detail += f"，新增 {new_count} 槽"
+    return {
+        'ratio': ratio,
+        'detail': detail,
+        'hint': '优先保持上一轮涂装阵型，权重 60%',
+    }
+
+
+def build_plan_score(record, prefetched_risks=None, prefetched_plans=None):
+    """Score a schedule plan from 0–100 without influencing plan generation.
+
+    Returns a dict with the total score, letter grade, and per-dimension breakdown
+    (each entry: name, ratio 0–1, score 0–100, weight, and detail text).
+    """
+    items = build_plan_gap_items(
+        record,
+        prefetched_risks=prefetched_risks,
+        prefetched_plans=prefetched_plans,
+    )
+
+    short_needed = sum(item['needed_vehicles'] for item in items if item['phase_label'] == '短期')
+    short_gap = sum(item['gap_vehicles'] for item in items if item['phase_label'] == '短期')
+    long_needed = sum(item['needed_vehicles'] for item in items if item['phase_label'] == '长期')
+    long_gap = sum(item['gap_vehicles'] for item in items if item['phase_label'] == '长期')
+
+    total_line_capacity = max(record.total_vehicles_in_line or record.total_vehicles or 1, 1)
+    total_gap = short_gap + long_gap
+    total_needed = short_needed + long_needed
+    formation_score = _build_formation_stability_score(record)
+    inventory_ratio = 1.0 if total_gap == 0 else max(
+        0.0,
+        (total_needed - total_gap) / max(total_needed, 1),
+    )
+    constraint_gap_ratio = max(0.0, 1.0 - min(1.0, total_gap / total_line_capacity))
+
+    breakdown = [
+        {
+            'key': 'formation_stability',
+            'label': '阵型保持',
+            'ratio': formation_score['ratio'],
+            'score': round(formation_score['ratio'] * 100, 1),
+            'weight': PLAN_SCORE_WEIGHTS['formation_stability'],
+            'detail': formation_score['detail'],
+            'hint': formation_score['hint'],
+        },
+        {
+            'key': 'inventory_guarantee',
+            'label': '库存保障',
+            'ratio': inventory_ratio,
+            'score': round(inventory_ratio * 100, 1),
+            'weight': PLAN_SCORE_WEIGHTS['inventory_guarantee'],
+            'detail': (
+                '短期与长期均无未满足缺口，库存项满分'
+                if total_gap == 0
+                else f"短期缺口 {short_gap} 车，长期缺口 {long_gap} 车"
+            ),
+            'hint': '库存充足即满分，权重 25%',
+        },
+        {
+            'key': 'constraint_gap',
+            'label': '约束缺口',
+            'ratio': constraint_gap_ratio,
+            'score': round(constraint_gap_ratio * 100, 1),
+            'weight': PLAN_SCORE_WEIGHTS['constraint_gap'],
+            'detail': f"未满足总缺口 {total_gap} 车 / 一圈 {total_line_capacity} 台",
+            'hint': '缺料、产能或注塑受限才扣分，权重 15%',
+        },
+    ]
+
+    total = round(
+        sum(item['ratio'] * item['weight'] for item in breakdown) * 100,
+        1,
+    )
+    letter, label, color = _score_grade(total)
+
+    return {
+        'total': total,
+        'grade_letter': letter,
+        'grade_label': label,
+        'grade_color': color,
+        'breakdown': breakdown,
+        'short_gap_vehicles': short_gap,
+        'long_gap_vehicles': long_gap,
+        'total_gap_vehicles': total_gap,
+    }
+
+
 def export_schedule_to_excel(record_id):
     """
     Export schedule calculation results to Excel file.

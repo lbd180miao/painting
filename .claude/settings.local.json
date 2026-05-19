@@ -17,7 +17,14 @@
       "Bash(npm install:*)",
       "Bash(pip install:*)",
       "Bash(git config:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "PowerShell(Out-File *)",
+      "PowerShell(Select-String -Path test_out_new.txt -Pattern '^\\(FAIL|ERROR\\):' -Context 0,3 | ForEach-Object { $_.Line; $_.Context.PostContext -join \"`n\"; \"---\" })",
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; .\\\\.venv\\\\Scripts\\\\python.exe manage.py test schedule.tests --verbosity=1 2>&1 | Select-Object -Last 12)",
+      "Bash(PYTHONIOENCODING=utf-8 python *)",
+      "PowerShell($content = Get-Content 'C:\\\\Users\\\\11410\\\\.claude\\\\projects\\\\d--workspace2-painting\\\\5e07fc20-6d70-41f4-bbbe-b5fb0f7ac0cb.jsonl' | Select-String -Pattern '涂装库存' -SimpleMatch | Select-Object -First 5; $content | ForEach-Object { $_.Line.Substring\\(0, [Math]::Min\\(500, $_.Line.Length\\)\\) })",
+      "Bash(findstr /V \"Traceback File line .py\")",
+      "Bash(findstr /V \"execute\")"
     ]
   }
 }
